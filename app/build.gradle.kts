@@ -1,8 +1,23 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+/*
+ * Identifiants de signature. Le fichier est produit par signing/new-keystore.ps1
+ * et ignore par git. Son absence n'est pas une erreur : elle produit une build
+ * release non signee, ce qui permet a n'importe qui de compiler le projet sans
+ * detenir la cle.
+ */
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -13,18 +28,32 @@ android {
         applicationId = "dev.mkdev.portainerremote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
 
         // Depot consulte pour les mises a jour. Un fork ne change que cette
         // ligne : rien d'autre dans le code ne nomme le depot.
         buildConfigField("String", "UPDATE_REPO", "\"MKDevTests/portainer-remote\"")
     }
 
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Pas d'obfuscation : kotlinx.serialization et Glance reposent sur
+            // la reflexion, et une regle manquante ne casserait qu'a l'execution.
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 

@@ -92,6 +92,31 @@ Les versions ne sont pas choisies au hasard et sont liées entre elles : AGP
 par AGP ; `compileSdk` 36 ; Compose BOM 2025.10.01 parce que les versions 2026
 exigent `compileSdk` 37. Mettre à jour l'un impose de refaire toute la chaîne.
 
+### Signer une version release
+
+```powershell
+powershell -ExecutionPolicy Bypass -File signing\new-keystore.ps1
+```
+
+Le script génère le keystore dans `~/.android-keys`, hors du dépôt, écrit
+`keystore.properties` — déjà couvert par `.gitignore` — et refuse d'écraser une
+clé existante. Les mots de passe sont saisis au clavier, jamais affichés et
+jamais passés en argument, où ils seraient visibles dans la liste des
+processus : `keytool` les lit dans des variables d'environnement effacées
+ensuite.
+
+```bash
+./gradlew assembleRelease
+```
+
+Sans `keystore.properties`, la commande réussit quand même et produit un
+`app-release-unsigned.apk` : le dépôt reste compilable par quelqu'un qui ne
+détient pas la clé.
+
+Cette clé n'a aucune sauvegarde ailleurs. Android refuse une mise à jour signée
+par une clé différente de celle de la version installée : la perdre oblige à
+désinstaller l'application et à reconfigurer tous les serveurs.
+
 ### Si la résolution des dépendances échoue en `PKIX path building failed`
 
 Un antivirus qui inspecte le HTTPS (Avast, Kaspersky, ESET…) re-signe le trafic
