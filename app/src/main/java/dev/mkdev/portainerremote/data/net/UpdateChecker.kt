@@ -1,5 +1,6 @@
 package dev.mkdev.portainerremote.data.net
 
+import android.util.Log
 import dev.mkdev.portainerremote.BuildConfig
 import dev.mkdev.portainerremote.core.ApiResult
 import io.ktor.client.HttpClient
@@ -73,6 +74,9 @@ class UpdateChecker(
 
     /** Ok(null) veut dire « a jour », pas « echec ». */
     suspend fun check(): ApiResult<ReleaseInfo?> = try {
+        // Trace volontaire : l'echec est silencieux pour l'utilisateur, il faut
+        // donc qu'il reste diagnosticable au logcat.
+        Log.d(TAG, "verification des releases de $repo, version installee $currentVersion")
         val response = http.get("https://api.github.com/repos/$repo/releases/latest") {
             // GitHub refuse les requetes sans User-Agent.
             header("User-Agent", "portainer-remote/$currentVersion")
@@ -82,17 +86,30 @@ class UpdateChecker(
         when {
             // 404 : depot prive, renomme, ou aucune release publiee. Aucun de ces
             // cas n'est une erreur a montrer a l'utilisateur.
-            response.status.value == 404 -> ApiResult.Ok(null)
-            !response.status.isSuccess() -> ApiResult.HttpError(response.status.value)
+            response.status.value == 404 -> {
+                Log.d(TAG, "aucune release publiee, ou depot inaccessible")
+                ApiResult.Ok(null)
+            }
+            !response.status.isSuccess() -> {
+                Log.w(TAG, "reponse ${response.status.value}")
+                ApiResult.HttpError(response.status.value)
+            }
             else -> {
                 val release: GithubRelease = response.body()
-                ApiResult.Ok(release.toInfoIfNewer(currentVersion))
+                val info = release.toInfoIfNewer(currentVersion)
+                Log.d(TAG, "derniere release ${release.tag}, plus recente=${info != null}")
+                ApiResult.Ok(info)
             }
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
+        Log.w(TAG, "verification impossible : ${e::class.simpleName} ${e.message}")
         ApiResult.NetworkError(e.message ?: e::class.simpleName.orEmpty())
+    }
+
+    private companion object {
+        const val TAG = "UpdateChecker"
     }
 }
 
