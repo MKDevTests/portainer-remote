@@ -130,7 +130,12 @@ try {
         "keyAlias=$Alias",
         "keyPassword=$effectiveKeyPw"
     )
-    Set-Content -Path $propsPath -Value $properties -Encoding utf8
+    # Surtout pas Set-Content -Encoding utf8 : PowerShell 5.1 y ajoute un BOM,
+    # et java.util.Properties.load lit en ISO-8859-1 sans le reconnaitre. Le
+    # BOM se collerait devant la premiere cle. Latin-1 est justement l'encodage
+    # que Properties attend, accents des mots de passe compris.
+    [IO.File]::WriteAllLines($propsPath, $properties,
+        [Text.Encoding]::GetEncoding('ISO-8859-1'))
 }
 finally {
     Remove-Item Env:\PR_STORE_PW -ErrorAction SilentlyContinue

@@ -43,6 +43,12 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+
+                // v2 suffit a partir d'Android 7, mais seul v3 porte la
+                // rotation de cle : sans lui, remplacer la cle un jour
+                // imposerait de desinstaller l'application.
+                enableV2Signing = true
+                enableV3Signing = true
             }
         }
     }
