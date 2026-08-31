@@ -17,12 +17,15 @@ import dev.mkdev.portainerremote.ui.servers.ServersScreen
 import dev.mkdev.portainerremote.ui.servers.ServersViewModel
 import dev.mkdev.portainerremote.ui.stacks.StacksScreen
 import dev.mkdev.portainerremote.ui.stacks.StacksViewModel
+import dev.mkdev.portainerremote.ui.updates.UpdatesScreen
+import dev.mkdev.portainerremote.ui.updates.UpdatesViewModel
 
 private const val ROUTE_SERVERS = "servers"
 private const val ROUTE_SERVER_NEW = "server/new"
 private const val ROUTE_SERVER_EDIT = "server/edit/{id}"
 private const val ROUTE_STACKS = "stacks/{serverId}"
 private const val ROUTE_IMAGES = "images/{serverId}"
+private const val ROUTE_UPDATES = "updates"
 
 @Composable
 fun App() {
@@ -49,6 +52,7 @@ fun App() {
                 onOpen = { id -> navController.navigate("stacks/$id") },
                 onEdit = { id -> navController.navigate("server/edit/$id") },
                 onAdd = { navController.navigate(ROUTE_SERVER_NEW) },
+                onOpenUpdates = { navController.navigate(ROUTE_UPDATES) },
             )
         }
 
@@ -95,6 +99,19 @@ fun App() {
                 ),
                 onBack = { navController.popBackStack() },
                 onOpenImages = { navController.navigate("images/$serverId") },
+            )
+        }
+
+        composable(ROUTE_UPDATES) {
+            UpdatesScreen(
+                viewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            UpdatesViewModel(container.updateChecker, container.updateManager)
+                        }
+                    },
+                ),
+                onBack = { navController.popBackStack() },
             )
         }
 

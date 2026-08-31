@@ -24,18 +24,33 @@ géométrie tablette. Seul l'écran de logs reste à faire.
 | Recherche, tri et filtre par état | fait |
 | Mise en page téléphone et tablette | fait |
 | Widget et tuile Quick Settings | fait |
-| Notification des nouvelles releases GitHub | fait |
+| Mise à jour depuis l'app (téléchargement et installation) | fait |
 | Consultation des logs | démultiplexeur écrit, écran à faire |
 
 ### Mises à jour
 
-L'application interroge au démarrage la dernière release du dépôt nommé par
-`UPDATE_REPO` dans `app/build.gradle.kts`, et signale une version plus récente
-que celle installée. Elle ouvre le lien de téléchargement ; elle n'installe
-rien. Réclamer `REQUEST_INSTALL_PACKAGES` serait exactement la permission qu'on
-ne veut pas accorder à une application de pilotage d'infrastructure.
+L'écran **Mises à jour**, accessible depuis la barre de l'écran des serveurs,
+affiche la version installée, vérifie à la demande la dernière release du dépôt
+nommé par `UPDATE_REPO` dans `app/build.gradle.kts`, télécharge l'APK et le
+passe à l'installateur d'Android. Une bannière apparaît aussi d'elle-même sur
+l'écran des serveurs quand une version plus récente existe.
 
-Un fork ne change que cette ligne : rien d'autre dans le code ne nomme le dépôt.
+Un fork ne change que la ligne `UPDATE_REPO` : rien d'autre dans le code ne
+nomme le dépôt.
+
+Trois garde-fous, parce que `REQUEST_INSTALL_PACKAGES` n'est pas une permission
+anodine pour une application de pilotage d'infrastructure :
+
+- elle donne le droit de *demander*, pas d'installer : Android affiche son
+  propre écran de confirmation, que rien ici ne contourne ;
+- l'autorisation « installer depuis cette source » est un réglage système
+  distinct, révocable, que l'application ne peut que proposer d'ouvrir ;
+- Android refuse tout APK signé par une autre clé que celle de la version
+  installée. C'est cette vérification, et non l'application, qui protège contre
+  un binaire substitué.
+
+L'APK est déposé dans le cache, dans le seul dossier exposé par le
+`FileProvider`, et le dossier est vidé avant chaque téléchargement.
 
 ## Cinq règles de conception
 

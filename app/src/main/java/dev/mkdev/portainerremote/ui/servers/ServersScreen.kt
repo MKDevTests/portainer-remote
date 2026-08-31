@@ -1,6 +1,5 @@
 package dev.mkdev.portainerremote.ui.servers
 
-import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,10 +33,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import dev.mkdev.portainerremote.data.net.ReleaseInfo
 import dev.mkdev.portainerremote.domain.AuthMode
 
@@ -47,12 +45,24 @@ fun ServersScreen(
     onOpen: (String) -> Unit,
     onEdit: (String) -> Unit,
     onAdd: () -> Unit,
+    onOpenUpdates: () -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
     val update by viewModel.update.collectAsState()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Serveurs Portainer") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Serveurs Portainer") },
+                actions = {
+                    // Entree permanente : sans elle, on ne peut verifier une mise
+                    // a jour que si l'application en a deja trouve une.
+                    IconButton(onClick = onOpenUpdates) {
+                        Icon(Icons.Default.SystemUpdate, contentDescription = "Mises à jour")
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = onAdd) {
                 Icon(Icons.Default.Add, contentDescription = "Ajouter un serveur")
@@ -61,7 +71,13 @@ fun ServersScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
 
-        update?.let { release -> UpdateBanner(release, onDismiss = viewModel::dismissUpdate) }
+        update?.let { release ->
+            UpdateBanner(
+                release = release,
+                onOpen = onOpenUpdates,
+                onDismiss = viewModel::dismissUpdate,
+            )
+        }
 
         if (servers.isEmpty()) {
             // Sur tablette, un texte laisse libre s'etale sur 1600 px et devient
@@ -154,14 +170,15 @@ fun ServersScreen(
 /**
  * Annonce une release GitHub plus recente que la version installee.
  *
- * Le bouton ouvre le lien, il n'installe rien : installer un APK demanderait la
- * permission REQUEST_INSTALL_PACKAGES, qui est exactement celle qu'on ne veut
- * pas accorder a une application de pilotage d'infrastructure.
+ * La banniere ne fait qu'annoncer : le telechargement et l'installation vivent
+ * dans l'ecran des mises a jour, ou l'utilisateur voit ce qu'il declenche.
  */
 @Composable
-private fun UpdateBanner(release: ReleaseInfo, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-
+private fun UpdateBanner(
+    release: ReleaseInfo,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -199,13 +216,8 @@ private fun UpdateBanner(release: ReleaseInfo, onDismiss: () -> Unit) {
                 )
             }
 
-            TextButton(
-                onClick = {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, release.downloadUrl.toUri()))
-                },
-                modifier = Modifier.align(Alignment.End),
-            ) {
-                Text(if (release.hasApk) "Télécharger l'APK" else "Voir la release")
+            TextButton(onClick = onOpen, modifier = Modifier.align(Alignment.End)) {
+                Text("Voir la mise à jour")
             }
         }
     }

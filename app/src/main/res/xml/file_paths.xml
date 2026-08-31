@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!--
+        Un seul chemin exposé, et rien d'autre : le dossier où l'écran de mises
+        à jour dépose l'APK téléchargé. Le cache est le bon endroit — le système
+        peut le vider, et un APK déjà installé n'a plus aucune raison de rester.
+    -->
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>

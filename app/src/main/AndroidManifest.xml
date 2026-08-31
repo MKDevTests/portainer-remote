@@ -4,6 +4,14 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!--
+        Mise à jour depuis l'écran « Mises à jour ». Cette permission ne donne
+        pas le droit d'installer : elle donne le droit de *demander*. Android
+        affiche son propre écran de confirmation, et refuse tout APK qui n'est
+        pas signé par la clé de la version déjà installée.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".PortainerRemoteApp"
         android:allowBackup="false"
@@ -24,6 +32,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!--
+            Expose l'APK téléchargé à l'installateur système. Depuis Android 7,
+            passer un file:// à une autre application lève FileUriExposedException.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Widget d'écran d'accueil : le seul chemin en un tap. -->
         <receiver
             android:name=".widget.StackWidgetReceiver"

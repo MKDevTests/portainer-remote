@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import dev.mkdev.portainerremote.data.PortainerRepository
+import dev.mkdev.portainerremote.data.UpdateManager
 import dev.mkdev.portainerremote.data.WidgetSync
 import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.ServerStore
@@ -18,6 +19,7 @@ class AppContainer(context: Context) {
     val repository = PortainerRepository(serverStore)
     val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository)
     val updateChecker = UpdateChecker()
+    val updateManager = UpdateManager(appContext)
 }
 
 class PortainerRemoteApp : Application() {
