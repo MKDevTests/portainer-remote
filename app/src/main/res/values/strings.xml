@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Portainer Remote</string>
+    <string name="widget_name">Stacks épinglés</string>
+    <string name="widget_description">Relance un stack favori en un tap, sans ouvrir l\'application.</string>
+    <string name="tile_label">Portainer</string>
 </resources>

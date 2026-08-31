@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.PortainerRepository
+import dev.mkdev.portainerremote.data.WidgetSync
+import dev.mkdev.portainerremote.data.store.FavoriteStack
+import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
@@ -26,12 +29,16 @@ data class StacksUi(
     val error: String? = null,
     val busy: Set<String> = emptySet(),
     val message: String? = null,
+    /** Clés des stacks épinglés, pour le widget et la tuile. */
+    val favorites: Set<String> = emptySet(),
 )
 
 class StacksViewModel(
     private val serverId: String,
     private val store: ServerStore,
     private val repository: PortainerRepository,
+    private val favoritesStore: FavoritesStore,
+    private val widgetSync: WidgetSync,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(StacksUi())
@@ -49,14 +56,56 @@ class StacksViewModel(
                 _ui.update { it.copy(loading = false, error = "Serveur introuvable.") }
                 return@launch
             }
+            val pinned = favoritesStore.current()
+                .filter { it.serverId == serverId }
+                .map { it.stackKey }
+                .toSet()
+
             when (val result = repository.load(server)) {
                 is ApiResult.Ok -> _ui.update {
-                    it.copy(server = server, groups = result.value, loading = false, error = null)
+                    it.copy(
+                        server = server,
+                        groups = result.value,
+                        loading = false,
+                        error = null,
+                        favorites = pinned,
+                    )
                 }
                 else -> _ui.update {
-                    it.copy(server = server, loading = false, error = result.errorText())
+                    it.copy(
+                        server = server,
+                        loading = false,
+                        error = result.errorText(),
+                        favorites = pinned,
+                    )
                 }
             }
+        }
+    }
+
+    fun toggleFavorite(stack: StackView) {
+        val server = _ui.value.server ?: return
+        viewModelScope.launch {
+            val pinned = favoritesStore.toggle(
+                FavoriteStack(
+                    serverId = server.id,
+                    serverLabel = server.label,
+                    stackKey = stack.key,
+                    name = stack.name,
+                    envId = stack.envId,
+                ),
+            )
+            _ui.update {
+                it.copy(
+                    favorites = if (pinned) it.favorites + stack.key else it.favorites - stack.key,
+                    message = if (pinned) {
+                        "${stack.name} épinglé au widget."
+                    } else {
+                        "${stack.name} retiré du widget."
+                    },
+                )
+            }
+            widgetSync.refresh()
         }
     }
 
@@ -76,6 +125,9 @@ class StacksViewModel(
             val outcome = block(server)
             _ui.update { it.copy(busy = it.busy - busyKey, message = outcome.toMessage()) }
             refresh()
+            // Le widget doit refleter ce que l'utilisateur vient de faire dans l'app,
+            // sinon il affiche un etat perime des qu'on revient a l'ecran d'accueil.
+            widgetSync.refresh()
         }
     }
 

@@ -5,12 +5,17 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import dev.mkdev.portainerremote.data.PortainerRepository
+import dev.mkdev.portainerremote.data.WidgetSync
+import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.ServerStore
 
 /** Injection manuelle : l'app est trop petite pour justifier un conteneur. */
 class AppContainer(context: Context) {
-    val serverStore = ServerStore(context)
+    private val appContext = context.applicationContext
+    val serverStore = ServerStore(appContext)
+    val favoritesStore = FavoritesStore(appContext)
     val repository = PortainerRepository(serverStore)
+    val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository)
 }
 
 class PortainerRemoteApp : Application() {

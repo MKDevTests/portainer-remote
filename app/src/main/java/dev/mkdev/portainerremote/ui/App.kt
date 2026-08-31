@@ -30,7 +30,14 @@ fun App() {
     val container = rememberAppContainer()
 
     val serversFactory = viewModelFactory {
-        initializer { ServersViewModel(container.serverStore, container.repository) }
+        initializer {
+            ServersViewModel(
+                container.serverStore,
+                container.repository,
+                container.favoritesStore,
+                container.widgetSync,
+            )
+        }
     }
 
     NavHost(navController = navController, startDestination = ROUTE_SERVERS) {
@@ -75,7 +82,13 @@ fun App() {
                     key = "stacks-$serverId",
                     factory = viewModelFactory {
                         initializer {
-                            StacksViewModel(serverId, container.serverStore, container.repository)
+                            StacksViewModel(
+                                serverId,
+                                container.serverStore,
+                                container.repository,
+                                container.favoritesStore,
+                                container.widgetSync,
+                            )
                         }
                     },
                 ),

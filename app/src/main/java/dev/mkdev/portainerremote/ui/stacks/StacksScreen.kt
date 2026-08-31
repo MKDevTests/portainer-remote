@@ -23,6 +23,8 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -143,8 +145,10 @@ fun StacksScreen(
                         StackCard(
                             stack = stack,
                             busy = ui.busy,
+                            favorite = stack.key in ui.favorites,
                             expanded = expanded[stack.key] == true,
                             onToggle = { expanded[stack.key] = expanded[stack.key] != true },
+                            onToggleFavorite = { viewModel.toggleFavorite(stack) },
                             onAction = { action -> viewModel.act(stack, action) },
                             onContainerAction = { container, action ->
                                 viewModel.actOnContainer(stack, container, action)
@@ -190,8 +194,10 @@ private fun EnvHeader(group: EnvGroup) {
 private fun StackCard(
     stack: StackView,
     busy: Set<String>,
+    favorite: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onAction: (StackAction) -> Unit,
     onContainerAction: (ContainerView, StackAction) -> Unit,
 ) {
@@ -213,6 +219,23 @@ private fun StackCard(
                     modifier = Modifier.weight(1f),
                 )
                 StateChip(stack.runState, stack.runningCount, stack.containers.size)
+                // L'étoile décide de ce que montre le widget : c'est le réglage
+                // le plus important de l'app, il mérite d'être là où on regarde.
+                IconButton(onClick = onToggleFavorite) {
+                    Icon(
+                        if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = if (favorite) {
+                            "Retirer ${stack.name} du widget"
+                        } else {
+                            "Épingler ${stack.name} au widget"
+                        },
+                        tint = if (favorite) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.outline
+                        },
+                    )
+                }
             }
 
             Row(

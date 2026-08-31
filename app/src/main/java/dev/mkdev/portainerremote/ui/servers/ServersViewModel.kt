@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.PortainerRepository
+import dev.mkdev.portainerremote.data.WidgetSync
+import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.domain.Server
 import kotlinx.coroutines.flow.SharingStarted
@@ -15,6 +17,8 @@ import kotlinx.coroutines.launch
 class ServersViewModel(
     private val store: ServerStore,
     private val repository: PortainerRepository,
+    private val favoritesStore: FavoritesStore,
+    private val widgetSync: WidgetSync,
 ) : ViewModel() {
 
     val servers: StateFlow<List<Server>> = store.servers
@@ -36,6 +40,10 @@ class ServersViewModel(
         viewModelScope.launch {
             repository.invalidate(id)
             store.delete(id)
+            // Sans ça, le widget garderait des favoris pointant vers un serveur
+            // qui n'existe plus.
+            favoritesStore.forgetServer(id)
+            widgetSync.refresh()
         }
     }
 
