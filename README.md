@@ -26,6 +26,7 @@ géométrie tablette. Seul l'écran de logs reste à faire.
 | Mise en page téléphone et tablette | fait |
 | Widget et tuile Quick Settings | fait |
 | Mise à jour depuis l'app (téléchargement et installation) | fait |
+| Sauvegarde chiffrée export / import | fait |
 | Consultation des logs | démultiplexeur écrit, écran à faire |
 
 ### Mises à jour
@@ -52,6 +53,32 @@ anodine pour une application de pilotage d'infrastructure :
 
 L'APK est déposé dans le cache, dans le seul dossier exposé par le
 `FileProvider`, et le dossier est vidé avant chaque téléchargement.
+
+### Sauvegarde
+
+Une désinstallation efface le DataStore **et** la clé du Keystore qui scelle les
+jetons. Sans sauvegarde, chaque réinstallation impose de tout ressaisir.
+
+L'écran **Sauvegarde** exporte les serveurs et les stacks épinglés dans un
+fichier chiffré en **AES-256-GCM**, par une clé dérivée en **PBKDF2-HMAC-SHA256,
+210 000 itérations** (recommandation OWASP), sel et IV tirés au hasard à chaque
+export. Les paramètres de dérivation voyagent dans le fichier : une sauvegarde
+écrite aujourd'hui reste lisible par une version future qui aurait durci ses
+réglages.
+
+Le chiffrement repose sur une **phrase de passe**, pas sur le Keystore, et c'est
+tout l'intérêt : une sauvegarde scellée par une clé qui disparaît à la
+désinstallation serait illisible au moment précis où on en a besoin.
+
+GCM authentifie le message : une mauvaise phrase de passe ne produit pas un
+déchiffrement silencieusement faux, elle est rejetée. Rien ne permet de
+retrouver une phrase de passe perdue.
+
+L'écriture et la lecture passent par le Storage Access Framework : l'utilisateur
+choisit l'emplacement, et l'application ne demande aucune permission de
+stockage. L'import restaure par-dessus la configuration en place en conservant
+les identifiants, donc réimporter deux fois la même sauvegarde ne crée pas de
+doublons.
 
 ## Cinq règles de conception
 

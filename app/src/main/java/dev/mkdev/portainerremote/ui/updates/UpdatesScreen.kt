@@ -101,6 +101,15 @@ fun UpdatesScreen(
             ) {
                 InstalledCard(version = ui.installedVersion, repo = ui.repo)
 
+                // Visible en permanence, et pas seulement une fois un APK
+                // telecharge : sinon l'autorisation ne peut jamais etre
+                // preparee a l'avance, ce qui est precisement le moment ou on
+                // veut s'en occuper.
+                PermissionCard(
+                    granted = ui.canInstall,
+                    onGrant = { viewModel.openInstallPermissionSettings() },
+                )
+
                 when (ui.stage) {
                     UpdateStage.CHECKING -> StatusRow("Vérification…", busy = true)
 
@@ -233,6 +242,45 @@ fun UpdatesScreen(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PermissionCard(granted: Boolean, onGrant: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (granted) {
+                MaterialTheme.colorScheme.surfaceVariant
+            } else {
+                MaterialTheme.colorScheme.errorContainer
+            },
+        ),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (granted) {
+                    "Installation depuis l'application : autorisée"
+                } else {
+                    "Installation depuis l'application : non autorisée"
+                },
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                if (granted) {
+                    "Une mise à jour téléchargée ici peut être installée directement."
+                } else {
+                    "Sans cette autorisation, le téléchargement aboutira mais l'installation " +
+                        "sera refusée. Le réglage se donne une fois, dans Android, et reste " +
+                        "révocable."
+                },
+                style = MaterialTheme.typography.bodySmall,
+            )
+            if (!granted) {
+                Button(onClick = onGrant, modifier = Modifier.fillMaxWidth()) {
+                    Text("Ouvrir le réglage Android")
+                }
             }
         }
     }

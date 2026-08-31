@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +47,7 @@ fun ServersScreen(
     onEdit: (String) -> Unit,
     onAdd: () -> Unit,
     onOpenUpdates: () -> Unit,
+    onOpenBackup: () -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
     val update by viewModel.update.collectAsState()
@@ -55,6 +57,12 @@ fun ServersScreen(
             TopAppBar(
                 title = { Text("Serveurs Portainer") },
                 actions = {
+                    IconButton(onClick = onOpenBackup) {
+                        Icon(
+                            Icons.Default.SettingsBackupRestore,
+                            contentDescription = "Sauvegarde",
+                        )
+                    }
                     // Entree permanente : sans elle, on ne peut verifier une mise
                     // a jour que si l'application en a deja trouve une.
                     IconButton(onClick = onOpenUpdates) {

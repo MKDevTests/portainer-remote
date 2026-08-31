@@ -10,6 +10,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import dev.mkdev.portainerremote.rememberAppContainer
+import dev.mkdev.portainerremote.ui.backup.BackupScreen
+import dev.mkdev.portainerremote.ui.backup.BackupViewModel
 import dev.mkdev.portainerremote.ui.images.ImagesScreen
 import dev.mkdev.portainerremote.ui.images.ImagesViewModel
 import dev.mkdev.portainerremote.ui.servers.ServerEditScreen
@@ -26,6 +28,7 @@ private const val ROUTE_SERVER_EDIT = "server/edit/{id}"
 private const val ROUTE_STACKS = "stacks/{serverId}"
 private const val ROUTE_IMAGES = "images/{serverId}"
 private const val ROUTE_UPDATES = "updates"
+private const val ROUTE_BACKUP = "backup"
 
 @Composable
 fun App() {
@@ -53,6 +56,7 @@ fun App() {
                 onEdit = { id -> navController.navigate("server/edit/$id") },
                 onAdd = { navController.navigate(ROUTE_SERVER_NEW) },
                 onOpenUpdates = { navController.navigate(ROUTE_UPDATES) },
+                onOpenBackup = { navController.navigate(ROUTE_BACKUP) },
             )
         }
 
@@ -99,6 +103,19 @@ fun App() {
                 ),
                 onBack = { navController.popBackStack() },
                 onOpenImages = { navController.navigate("images/$serverId") },
+            )
+        }
+
+        composable(ROUTE_BACKUP) {
+            BackupScreen(
+                viewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            BackupViewModel(container.backupManager, container.widgetSync)
+                        }
+                    },
+                ),
+                onBack = { navController.popBackStack() },
             )
         }
 

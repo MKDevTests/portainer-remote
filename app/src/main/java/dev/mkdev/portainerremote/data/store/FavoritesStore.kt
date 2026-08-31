@@ -84,6 +84,25 @@ class FavoritesStore(context: Context) {
         return nowFavorite
     }
 
+    /**
+     * Ajoute des favoris sans en retirer, pour la restauration d'une sauvegarde.
+     * Un favori deja present n'est pas duplique — et surtout pas bascule, ce que
+     * ferait [toggle].
+     */
+    suspend fun addAll(favorites: List<FavoriteStack>) {
+        if (favorites.isEmpty()) return
+        appContext.widgetDataStore.edit { prefs ->
+            val list = decodeFavorites(prefs[favoritesKey]).toMutableList()
+            favorites.forEach { candidate ->
+                val exists = list.any {
+                    it.serverId == candidate.serverId && it.stackKey == candidate.stackKey
+                }
+                if (!exists) list.add(candidate)
+            }
+            prefs[favoritesKey] = json.encodeToString(list.toList())
+        }
+    }
+
     /** Retire les favoris d'un serveur supprime, sinon le widget garde des fantomes. */
     suspend fun forgetServer(serverId: String) {
         appContext.widgetDataStore.edit { prefs ->
