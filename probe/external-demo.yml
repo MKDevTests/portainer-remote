@@ -1,0 +1,9 @@
+services:
+  web:
+    image: nginx:alpine
+    container_name: ext-web
+    restart: unless-stopped
+  cache:
+    image: redis:alpine
+    container_name: ext-cache
+    restart: unless-stopped

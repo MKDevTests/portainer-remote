@@ -1,0 +1,878 @@
+<title>Portainer Remote</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  :root {
+    --ground: #F4F6F8;
+    --surface: #FFFFFF;
+    --surface-sunk: #EDF1F4;
+    --ink: #14202B;
+    --ink-soft: #3D4E5E;
+    --muted: #67788A;
+    --line: #D9E1E8;
+    --line-strong: #B9C6D1;
+    --accent: #0B6E77;
+    --accent-ink: #095A62;
+    --accent-wash: #E1F0F1;
+    --run: #1D7A47;
+    --run-wash: #E2F2E8;
+    --warn: #9A5E00;
+    --warn-wash: #F8EEDC;
+    --stop: #A8232B;
+    --stop-wash: #F8E5E6;
+
+    --f-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --f-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+    --f-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --measure: 68ch;
+    --page: 1080px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0D141A;
+      --surface: #141E26;
+      --surface-sunk: #101922;
+      --ink: #E3EAF0;
+      --ink-soft: #BCC9D4;
+      --muted: #8698A7;
+      --line: #24313C;
+      --line-strong: #354652;
+      --accent: #3FB3BC;
+      --accent-ink: #6BCDD4;
+      --accent-wash: #102C30;
+      --run: #4FBE81;
+      --run-wash: #10271B;
+      --warn: #D69A3C;
+      --warn-wash: #2A2013;
+      --stop: #E4747C;
+      --stop-wash: #2B1518;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #0D141A;
+    --surface: #141E26;
+    --surface-sunk: #101922;
+    --ink: #E3EAF0;
+    --ink-soft: #BCC9D4;
+    --muted: #8698A7;
+    --line: #24313C;
+    --line-strong: #354652;
+    --accent: #3FB3BC;
+    --accent-ink: #6BCDD4;
+    --accent-wash: #102C30;
+    --run: #4FBE81;
+    --run-wash: #10271B;
+    --warn: #D69A3C;
+    --warn-wash: #2A2013;
+    --stop: #E4747C;
+    --stop-wash: #2B1518;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: var(--page);
+    margin: 0 auto;
+    padding: 0 28px 96px;
+  }
+
+  /* ---------- masthead ---------- */
+
+  .masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 56px 0 30px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 40px;
+  }
+
+  .eyebrow {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h1 {
+    font-family: var(--f-display);
+    font-weight: 700;
+    font-size: clamp(2.4rem, 6vw, 3.6rem);
+    line-height: 1.02;
+    letter-spacing: -0.022em;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.08rem;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---------- spec sheet ---------- */
+
+  .spec {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    margin-bottom: 56px;
+  }
+
+  .spec > div {
+    background: var(--surface);
+    padding: 18px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .spec dt {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .spec dd {
+    margin: 0;
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.06rem;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+  }
+
+  .spec small {
+    color: var(--muted);
+    font-size: 0.83rem;
+    line-height: 1.45;
+  }
+
+  /* ---------- sections ---------- */
+
+  section { margin-bottom: 60px; }
+
+  h2 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.62rem;
+    letter-spacing: -0.014em;
+    line-height: 1.2;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+
+  .h2-rule {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-bottom: 1px solid var(--line-strong);
+    padding-bottom: 10px;
+    margin-bottom: 24px;
+  }
+
+  .h2-rule .num {
+    font-family: var(--f-mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+    flex: none;
+  }
+
+  h3 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1.06rem;
+    letter-spacing: -0.005em;
+    margin: 30px 0 8px;
+  }
+
+  p { max-width: var(--measure); margin: 0 0 14px; }
+  p.lead { color: var(--ink-soft); }
+
+  ul, ol { max-width: var(--measure); padding-left: 1.15em; margin: 0 0 16px; }
+  li { margin-bottom: 7px; }
+
+  code {
+    font-family: var(--f-mono);
+    font-size: 0.86em;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 0.1em 0.36em;
+    word-break: break-word;
+  }
+
+  strong { font-weight: 600; }
+
+  a { color: var(--accent-ink); }
+
+  /* ---------- layer stack ---------- */
+
+  .layers {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-width: 780px;
+  }
+
+  .layer {
+    display: grid;
+    grid-template-columns: 148px 1fr;
+    gap: 18px;
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    padding: 14px 18px;
+  }
+
+  .layer .tier {
+    font-family: var(--f-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding-top: 3px;
+  }
+
+  .layer .what { font-weight: 600; font-family: var(--f-display); }
+  .layer .how { color: var(--muted); font-size: 0.9rem; line-height: 1.5; }
+
+  .layer-arrow {
+    font-family: var(--f-mono);
+    color: var(--line-strong);
+    font-size: 0.85rem;
+    padding-left: 16px;
+  }
+
+  /* ---------- tables ---------- */
+
+  .scroller {
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    min-width: 640px;
+  }
+
+  th {
+    text-align: left;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  td.api { font-family: var(--f-mono); font-size: 0.82rem; line-height: 1.5; }
+  td.api b { color: var(--accent-ink); font-weight: 600; }
+  td.note { color: var(--muted); font-size: 0.85rem; }
+
+  /* ---------- state chips ---------- */
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .chip::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .chip.ok { color: var(--run); background: var(--run-wash); }
+  .chip.mid { color: var(--warn); background: var(--warn-wash); }
+  .chip.bad { color: var(--stop); background: var(--stop-wash); }
+
+  /* ---------- risk cards ---------- */
+
+  .risks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 14px;
+  }
+
+  .risk {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    padding: 18px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .risk h4 {
+    font-family: var(--f-display);
+    font-weight: 600;
+    font-size: 1rem;
+    margin: 0;
+    letter-spacing: -0.005em;
+  }
+
+  .risk p { margin: 0; font-size: 0.91rem; color: var(--ink-soft); max-width: none; }
+  .risk .fix { font-size: 0.88rem; color: var(--muted); }
+  .risk .fix b { color: var(--accent-ink); font-weight: 600; }
+
+  /* ---------- phases ---------- */
+
+  .phases { display: flex; flex-direction: column; gap: 0; }
+
+  .phase {
+    display: grid;
+    grid-template-columns: 64px 1fr 96px;
+    gap: 20px;
+    align-items: start;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .phase:first-child { border-top: 1px solid var(--line); }
+
+  .phase .pnum {
+    font-family: var(--f-mono);
+    font-weight: 600;
+    font-size: 1.5rem;
+    color: var(--line-strong);
+    line-height: 1;
+    padding-top: 2px;
+  }
+  .phase.now .pnum { color: var(--accent); }
+
+  .phase h4 {
+    font-family: var(--f-display);
+    font-size: 1.08rem;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .phase p { margin: 0; font-size: 0.93rem; color: var(--ink-soft); max-width: none; }
+
+  .phase .cost {
+    font-family: var(--f-mono);
+    font-size: 0.86rem;
+    font-weight: 500;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    padding-top: 4px;
+  }
+  .phase .cost span { display: block; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  /* ---------- callout ---------- */
+
+  .callout {
+    background: var(--accent-wash);
+    border-left: 4px solid var(--accent);
+    padding: 18px 22px;
+    max-width: var(--measure);
+  }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout h3 { margin-top: 0; }
+
+  pre {
+    font-family: var(--f-mono);
+    font-size: 0.82rem;
+    line-height: 1.65;
+    background: var(--surface-sunk);
+    border: 1px solid var(--line);
+    padding: 16px 18px;
+    overflow-x: auto;
+    margin: 0 0 16px;
+    color: var(--ink-soft);
+  }
+  pre b { color: var(--accent-ink); font-weight: 600; }
+
+  p.note-inline {
+    border-left: 3px solid var(--stop);
+    padding-left: 14px;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+
+  footer {
+    border-top: 2px solid var(--ink);
+    padding-top: 18px;
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-family: var(--f-mono);
+    letter-spacing: 0.03em;
+  }
+
+  @media (max-width: 620px) {
+    .layer { grid-template-columns: 1fr; gap: 6px; }
+    .phase { grid-template-columns: 40px 1fr; }
+    .phase .cost { grid-column: 2; text-align: left; padding-top: 8px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Étude de faisabilité · 31 août 2026</div>
+    <h1>Portainer Remote</h1>
+    <p class="standfirst">Une app Android qui pilote les stacks et les conteneurs du NAS : allumer, éteindre, relancer, en trois taps depuis le canapé. Voici ce que ça implique réellement avant d'écrire la première ligne de Kotlin.</p>
+  </header>
+
+  <dl class="spec">
+    <div>
+      <dt>Accès réseau</dt>
+      <dd>VPN</dd>
+      <small>WireGuard ou Tailscale. Portainer reste invisible depuis Internet.</small>
+    </div>
+    <div>
+      <dt>Technologie</dt>
+      <dd>Kotlin + Compose</dd>
+      <small>Natif. Seule voie confortable vers le widget et la tuile.</small>
+    </div>
+    <div>
+      <dt>Authentification</dt>
+      <dd>Jeton API <em>et</em> mot de passe</dd>
+      <small>Deux modes au choix dans l'écran de configuration.</small>
+    </div>
+    <div>
+      <dt>Périmètre v1</dt>
+      <dd>Complet</dd>
+      <small>Actions, logs, widget, plusieurs serveurs.</small>
+    </div>
+  </dl>
+
+  <section>
+    <div class="h2-rule"><span class="num">01</span><h2>Le critère de réussite</h2></div>
+    <p class="lead">Le navigateur mobile affiche déjà la liste. Ton app doit gagner ailleurs.</p>
+    <p>Portainer n'a pas d'application mobile officielle. Son interface web est utilisable sur téléphone, mais relancer un conteneur y coûte le chargement complet de l'interface puis cinq à six taps — c'est la barre à battre, et elle est basse.</p>
+    <p><strong>Le vrai gain n'est pas l'écran de liste</strong>, c'est le widget d'écran d'accueil et la tuile Quick Settings : relancer un stack en un tap, sans rien ouvrir. Si tu ne construis que la liste, tu auras réécrit l'interface web en moins bien. Toute l'architecture qui suit est pensée pour que ce tap unique soit possible dès le premier jour.</p>
+    <div class="callout">
+      <h3>Le test d'acceptation de la v1</h3>
+      <p>Depuis l'écran d'accueil, sans ouvrir l'application : relancer un stack en un tap, avec un retour visuel en moins de trois secondes. Tant que ce scénario ne passe pas, la v1 n'est pas finie — même si tous les écrans fonctionnent.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">02</span><h2>Architecture</h2></div>
+    <p class="lead">Quatre couches, sans surprise. L'app est un client REST : toute la complexité est dans le réseau et le stockage du secret, pas dans la logique métier.</p>
+
+    <div class="layers">
+      <div class="layer">
+        <div class="tier">Écrans</div>
+        <div>
+          <div class="what">Compose + Navigation</div>
+          <div class="how">Liste des serveurs → liste des stacks → détail d'un stack → conteneurs → logs. Un écran de configuration à part.</div>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ état observable</div>
+      <div class="layer">
+        <div class="tier">État</div>
+        <div>
+          <div class="what">ViewModel par écran</div>
+          <div class="how">Expose un <code>StateFlow</code> : chargement, contenu, erreur, action en cours. C'est ici que vit l'optimistic update quand tu tapes « Restart ».</div>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ appels suspendus</div>
+      <div class="layer">
+        <div class="tier">Données</div>
+        <div>
+          <div class="what">Repository + fusion + cache</div>
+          <div class="how">Un repository par serveur. C'est ici que les stacks gérés et les stacks déduits des étiquettes deviennent une seule liste homogène. Room garde le dernier état connu, pour afficher quelque chose quand le VPN est coupé.</div>
+        </div>
+      </div>
+      <div class="layer-arrow">↓ HTTP</div>
+      <div class="layer">
+        <div class="tier">Réseau</div>
+        <div>
+          <div class="what">Ktor Client (OkHttp)</div>
+          <div class="how">Un intercepteur ajoute le bon en-tête d'authentification selon le mode du serveur, et rejoue l'appel une fois si le jeton a expiré.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Après chaque action, l'état fait foi</h3>
+    <p>Mesure inattendue : arrêter un stack déjà arrêté renvoie <strong>400</strong>, alors que démarrer un conteneur déjà en marche renvoie <strong>304</strong>. Deux façons de dire « c'était déjà fait » — l'une classée erreur, l'autre succès. Et le 400 sert aussi aux vraies erreurs, donc on ne peut pas le déclarer bénin.</p>
+    <p>Une app qui juge sur le code HTTP affichera « Échec » sur une opération parfaitement réussie. C'est le genre de bug qui pousse à rouvrir le navigateur pour vérifier — et qui annule l'intérêt de l'app.</p>
+    <div class="callout">
+      <h3 style="margin-top:0">La règle</h3>
+      <p>Après toute action, relire l'état et le comparer à l'intention. Si l'état correspond à ce que l'utilisateur voulait, c'est un succès, quel qu'ait été le code retour. Sinon c'est un échec, même si le code était 200.</p>
+      <p>Bénéfice secondaire : cette règle traite gratuitement le cas des stacks déduits, où l'action se répercute sur plusieurs conteneurs dont certains sont peut-être déjà dans l'état visé.</p>
+    </div>
+
+    <h3>Ce que tu stockes sur le téléphone</h3>
+    <p>Une seule entité compte : le <strong>serveur</strong>. Tout le reste en découle et peut être rechargé.</p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Champ</th><th>Exemple</th><th>Remarque</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="api">label</td><td class="api">NAS maison</td><td class="note">Affiché en tête de liste.</td></tr>
+          <tr><td class="api">baseUrl</td><td class="api">https://nas.mon-tailnet.ts.net:9443</td><td class="note">Sans le <code>/api</code> final, l'app le concatène.</td></tr>
+          <tr><td class="api">authMode</td><td class="api">API_KEY | PASSWORD</td><td class="note">Détermine l'en-tête envoyé.</td></tr>
+          <tr><td class="api">secret</td><td class="api">ptr_… <em>ou</em> mot de passe</td><td class="note">Chiffré. Jamais journalisé, jamais dans un rapport de crash.</td></tr>
+          <tr><td class="api">cachedJwt</td><td class="api">eyJhbGciOi…</td><td class="note">Mode mot de passe uniquement. Durée de vie courte.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">03</span><h2>La surface d'API à couvrir</h2></div>
+    <p class="lead">Onze appels suffisent pour tout le périmètre v1. Portainer expose ses propres routes pour les stacks, et fait office de proxy vers l'API Docker pour les conteneurs — ce sont deux styles différents dans le même client.</p>
+
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Ce que tu veux</th><th>L'appel</th><th>À savoir</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Se connecter par mot de passe</td>
+            <td class="api"><b>POST</b> /api/auth</td>
+            <td class="note">Renvoie un JWT à mettre en <code>Authorization: Bearer</code>. Expire au bout de quelques heures.</td>
+          </tr>
+          <tr>
+            <td>Se connecter par jeton</td>
+            <td class="api">en-tête <b>X-API-Key</b></td>
+            <td class="note">Pas d'appel préalable, pas d'expiration. Généré dans Portainer, section jetons d'accès.</td>
+          </tr>
+          <tr>
+            <td>Lister les environnements</td>
+            <td class="api"><b>GET</b> /api/endpoints</td>
+            <td class="note">Donne les <code>endpointId</code> dont dépendent presque tous les autres appels. Ajouter <code>?excludeSnapshots=true</code> : sans lui, 938 Ko au lieu de 3,5 Ko.</td>
+          </tr>
+          <tr>
+            <td>Lister les stacks</td>
+            <td class="api"><b>GET</b> /api/stacks</td>
+            <td class="note">Tous environnements confondus. À regrouper côté app par <code>EndpointId</code>.</td>
+          </tr>
+          <tr>
+            <td>Démarrer un stack</td>
+            <td class="api"><b>POST</b> /api/stacks/{id}/start<br>?endpointId={env}</td>
+            <td class="note">Mesuré : <b>200</b>. Le paramètre de requête est obligatoire. <code>Status</code> repasse à 1.</td>
+          </tr>
+          <tr>
+            <td>Arrêter un stack</td>
+            <td class="api"><b>POST</b> /api/stacks/{id}/stop<br>?endpointId={env}</td>
+            <td class="note">Mesuré : <b>200</b>, puis <b>400</b> si on rejoue sur un stack déjà arrêté. <code>Status</code> passe à 2.</td>
+          </tr>
+          <tr>
+            <td>Relancer un stack</td>
+            <td class="api">— <em>n'existe pas</em> —</td>
+            <td class="note">À composer : stop, attendre l'état inactif, puis start. Une seule action visible côté app.</td>
+          </tr>
+          <tr>
+            <td>Lister les conteneurs</td>
+            <td class="api"><b>GET</b> /api/endpoints/{env}/docker<br>/containers/json?all=true</td>
+            <td class="note">Format Docker brut. <code>all=true</code> sinon les conteneurs arrêtés sont invisibles.</td>
+          </tr>
+          <tr>
+            <td>Démarrer / arrêter / relancer</td>
+            <td class="api"><b>POST</b> …/containers/{id}/start<br><b>POST</b> …/containers/{id}/stop<br><b>POST</b> …/containers/{id}/restart</td>
+            <td class="note">Mesuré : <b>304</b> sur un conteneur déjà en marche — donc un succès, pas une erreur. Noter l'asymétrie avec les stacks, qui répondent 400 dans le cas équivalent.</td>
+          </tr>
+          <tr>
+            <td>Lire les logs</td>
+            <td class="api"><b>GET</b> …/containers/{id}/logs<br>?stdout=1&amp;stderr=1&amp;tail=200</td>
+            <td class="note">Flux binaire multiplexé, confirmé par la mesure. Voir le point 3 des difficultés.</td>
+          </tr>
+          <tr>
+            <td>Redéployer un stack</td>
+            <td class="api"><b>PUT</b> /api/stacks/{id}?endpointId={env}</td>
+            <td class="note">Hors périmètre v1, mais c'est la route à connaître pour un « pull &amp; recreate » plus tard.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Une route publique au milieu des autres</h3>
+    <p>Vérifié sur l'instance de test : <code>/api/system/status</code> répond <strong>sans authentification</strong>. Un écran de configuration qui teste la connexion avec cette route annonce donc « connexion établie » alors que le jeton saisi est invalide — c'est précisément le bug qu'a produit la première version de l'application, et il n'est apparu qu'en la faisant tourner contre un vrai serveur.</p>
+    <p>Le test de connexion doit interroger une route qui exige l'authentification. <code>/api/endpoints</code> convient, et donne au passage le nombre d'environnements à afficher en confirmation.</p>
+
+    <h3>Ce que <code>/api/stacks</code> ne renvoie pas</h3>
+    <p>Mesuré sur l'instance de test en 2.19.4 : la route renvoie <strong>un seul</strong> stack, celui créé dans l'interface Portainer. Les conteneurs, eux, révèlent <strong>quatre</strong> projets Compose distincts. L'interface web n'en sait pas plus que l'API — elle reconstruit les stacks manquants côté client, à partir des étiquettes des conteneurs.</p>
+    <p>Un « stack », côté app, est donc l'union de deux sources. C'est la décision de conception la plus structurante de tout le projet.</p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Source</th><th>Ce qu'elle révèle</th><th>Actions disponibles</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="api">/api/stacks</td>
+            <td>Stacks créés dans Portainer. Fournit <code>Id</code>, <code>Status</code>, <code>EndpointId</code>.</td>
+            <td><span class="chip ok">natif</span> start et stop en un appel</td>
+          </tr>
+          <tr>
+            <td class="api">label<br>com.docker.compose.project</td>
+            <td>Tout le reste : projets lancés en ligne de commande, stacks créés par l'interface du NAS.</td>
+            <td><span class="chip mid">déduit</span> boucle sur les conteneurs</td>
+          </tr>
+          <tr>
+            <td class="api">label<br>com.docker.stack.namespace</td>
+            <td>Stacks Swarm, qui n'utilisent pas l'étiquette Compose.</td>
+            <td><span class="chip mid">déduit</span> boucle sur les conteneurs</td>
+          </tr>
+          <tr>
+            <td class="api">aucune étiquette</td>
+            <td>Conteneurs orphelins, lancés à la main.</td>
+            <td><span class="chip ok">unitaire</span> start, stop, restart</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px">Bonne nouvelle au passage : un stack externe n'est pas condamné à la lecture seule. Il n'a simplement pas de bouton natif — l'app applique l'action à chacun de ses conteneurs et présente le tout comme une action unique. L'utilisateur ne voit pas la différence.</p>
+
+    <h3>Le cycle d'un rafraîchissement</h3>
+    <p>Ce que l'app appelle réellement pour peindre son écran principal, dans l'ordre :</p>
+    <ol>
+      <li><code>/api/endpoints?excludeSnapshots=true</code> — <strong>3,5 Ko</strong>, les environnements et leurs identifiants.</li>
+      <li><code>/api/stacks</code> — les stacks gérés par Portainer.</li>
+      <li><code>/api/endpoints/{env}/docker/containers/json?all=true</code> — un appel par environnement, d'où l'on déduit les stacks que la route précédente ignore.</li>
+    </ol>
+    <p>Trois appels en données fraîches, pour un total très inférieur au seul instantané embarqué. Cet instantané n'est jamais utilisé : il est régénéré périodiquement, donc périmé, et l'app n'a aucune raison d'afficher un état vieux de plusieurs minutes juste après que l'utilisateur a appuyé sur « Relancer ». C'est autant de logique de réconciliation en moins à écrire.</p>
+
+    <h3>Vérifie ces routes toi-même</h3>
+    <p>Les chemins ci-dessus valent pour Portainer CE 2.x, mais le détail des paramètres a bougé entre versions mineures. Une session de <code>curl</code> de vingt minutes te donne la vérité de terrain, et te sert ensuite de jeu de données pour les tests.</p>
+<pre><b>export</b> P=ptr_xxx            <span style="opacity:.6"># le jeton ne quitte jamais ton terminal</span>
+<b>curl</b> -H "X-API-Key: $P" https://nas:9443/api/endpoints
+<b>curl</b> -H "X-API-Key: $P" https://nas:9443/api/stacks
+<b>curl</b> -X POST -H "X-API-Key: $P" \
+     "https://nas:9443/api/stacks/3/stop?endpointId=1"</pre>
+    <p class="note-inline">Un jeton Portainer donne le contrôle total du NAS. Il n'a aucune raison d'apparaître ailleurs que dans une variable d'environnement, un gestionnaire de mots de passe, et le stockage chiffré de l'app. Jamais dans un fichier de projet, un historique de shell partagé, une capture d'écran ou une conversation.</p>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">04</span><h2>Marcher avec n'importe quel Portainer</h2></div>
+    <p class="lead">Rien dans l'app ne connaît ton NAS. L'utilisateur saisit une URL de base et un secret ; tout le reste se découvre à l'exécution. Cinq règles suffisent à garantir ça, et elles se respectent dès la première ligne — les rattraper après coup coûte une réécriture.</p>
+
+    <div class="risks">
+      <div class="risk">
+        <h4>Règle 1 · Aucun identifiant en dur</h4>
+        <p>Une seule saisie utilisateur : l'URL de base. <code>/api/endpoints</code> révèle les environnements, <code>/api/stacks</code> les stacks, l'API Docker les conteneurs.</p>
+        <p class="fix"><b>Interdit dans le code :</b> un <code>endpointId</code>, un nom de stack, un port, un nom d'hôte. Si l'app affiche « 1 » par défaut quelque part, elle est déjà cassée pour l'instance du voisin.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Règle 2 · Sonder, pas versionner</h4>
+        <p>Ne branche jamais sur un numéro de version. L'app tente l'appel et lit la réponse : un 404, 501 ou 403 signifie « non supporté ici » et le bouton disparaît, proprement.</p>
+        <p class="fix"><b>Bénéfice :</b> couvre d'un coup l'édition Community contre Business, les versions plus anciennes, les futures, et les instances derrière un proxy qui filtre certaines routes.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Règle 3 · Parsing tolérant</h4>
+        <p>Portainer ajoute des champs entre versions mineures. Un décodeur strict plante à la première mise à jour du NAS — sur une app qu'on utilise justement pour réparer les choses.</p>
+        <p class="fix"><b>Concrètement :</b> <code>ignoreUnknownKeys = true</code>, et tout champ non vital nullable avec une valeur par défaut. Seuls l'identifiant, le nom et l'état sont obligatoires.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Règle 4 · Assumer l'hétérogénéité</h4>
+        <p>Un même Portainer peut piloter du Docker local, un agent distant, du Swarm, du Kubernetes, de l'Edge. Chacun a des actions différentes, voire aucune.</p>
+        <p class="fix"><b>Règle d'affichage :</b> ce qui n'est pas pilotable apparaît en lecture seule avec la raison affichée. Jamais un bouton qui échoue, jamais un écran vide sans explication.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Règle 5 · Tester sur deux instances <span class="chip ok">validée</span></h4>
+        <p>Une seule installation de référence produit toujours du code qui ne marche que là. Deux suffisent à attraper l'essentiel des écarts.</p>
+        <p class="fix"><b>Le duo retenu :</b> le NAS en <code>2.31.3</code>, le Docker Desktop du PC en <code>2.19.4</code>. Ce qui passe aux deux bouts de cet intervalle passe partout entre les deux. Le NAS montera bientôt de version — raison de plus pour ne jamais brancher sur un numéro.</p>
+      </div>
+    </div>
+
+    <h3>Résultat mesuré : 2.19.4 contre 2.31.3</h3>
+    <p>442 champs d'un côté, 764 de l'autre, et <strong>aucun conflit de type sur les champs communs</strong>. C'est le meilleur résultat qu'on pouvait espérer : un décodeur tolérant suffit, aucun adaptateur par version n'est nécessaire.</p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Écart</th><th>Champs concernés</th><th>Ce que ça implique</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="chip ok">apparus</span></td>
+            <td class="api">ContainerEngine<br>Snapshots.IsPodman<br>Snapshots.ContainerCount</td>
+            <td class="note">Portainer sait désormais piloter Podman. Un moteur de plus à ranger sous la règle 4, pas un cas particulier à coder.</td>
+          </tr>
+          <tr>
+            <td><span class="chip mid">disparus</span></td>
+            <td class="api">IsComposeFormat<br>UserTrusted<br>IsEdgeDevice<br>EnableGPUManagement<br>DemoEnvironment</td>
+            <td class="note">Aucun n'est vital — mais un modèle strict aurait planté sur les cinq. La règle 3 se paie ici.</td>
+          </tr>
+          <tr>
+            <td><span class="chip ok">stables</span></td>
+            <td class="api">Id · Name · Type<br>Status · EndpointId</td>
+            <td class="note">Le noyau dont dépendent toutes les actions n'a pas bougé d'un octet en douze versions mineures.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px">Une réserve de méthode : <code>Env</code> n'apparaît peuplé que côté NAS parce que ses stacks ont des variables, pas parce que le format a changé. Un diff de schéma tiré de deux jeux de données réels mêlera toujours des écarts de version et des écarts de contenu — il faut lire chaque ligne avant de conclure.</p>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">05</span><h2>Les sept difficultés réelles</h2></div>
+    <p class="lead">Aucune n'est bloquante. Toutes coûtent du temps si tu les découvres au milieu du développement plutôt que maintenant. Les deux dernières ont été trouvées par le sondage, pas par le raisonnement.</p>
+
+    <div class="risks">
+      <div class="risk">
+        <h4>Le certificat auto-signé <span class="chip mid">coûteux</span></h4>
+        <p>Android refuse par défaut les certificats que Portainer génère lui-même. Le contournement classique — désactiver la vérification TLS — annule l'intérêt du chiffrement.</p>
+        <p class="fix"><b>Solution :</b> Tailscale émet un vrai certificat Let's Encrypt pour ton nom <code>*.ts.net</code>. Tu n'as alors plus rien à faire côté app. À défaut, épingle le certificat via <code>network_security_config.xml</code>.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Le VPN coupé <span class="chip mid">ergonomie</span></h4>
+        <p>Hors du réseau et sans VPN actif, chaque appel expire après une longue attente. Une app qui tourne dans le vide pendant trente secondes passe pour cassée.</p>
+        <p class="fix"><b>Solution :</b> délai d'attente court (5 s), affichage du dernier état connu grisé, et un message explicite « NAS injoignable — le VPN est-il actif ? » plutôt qu'un spinner.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Les logs ne sont pas du texte <span class="chip bad">confirmé</span></h4>
+        <p>Premiers octets réellement reçus : <code>01 00 00 00 00 00 00 71</code>, puis le texte. Soit un en-tête de 8 octets — flux 1 pour la sortie standard, puis la taille de la trame sur quatre octets, ici 113. Affiché tel quel, chaque ligne commence par des caractères parasites.</p>
+        <p class="fix"><b>Solution :</b> un démultiplexeur d'une vingtaine de lignes, à écrire une fois. Exception à gérer : les conteneurs lancés avec un TTY renvoient du texte brut, sans en-tête.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Le stockage du secret <span class="chip mid">sécurité</span></h4>
+        <p>Un jeton Portainer donne un contrôle total sur le NAS. La bibliothèque <code>security-crypto</code> d'AndroidX, longtemps la réponse standard, n'est plus activement maintenue.</p>
+        <p class="fix"><b>Solution :</b> clé AES-GCM dans le Keystore Android, chiffrement du secret, stockage du résultat dans DataStore. Et une demande d'empreinte avant toute action d'arrêt.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Les actions depuis le widget <span class="chip mid">plomberie</span></h4>
+        <p>Un widget ne peut pas faire d'appel réseau directement : il n'a que quelques millisecondes de vie. Un tap doit déclencher un travail en arrière-plan, puis rafraîchir l'affichage quand la réponse arrive.</p>
+        <p class="fix"><b>Solution :</b> Glance pour dessiner le widget, WorkManager pour exécuter l'appel, mise à jour du widget en fin de tâche. Compter une demi-journée rien que pour cet aller-retour.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Les stacks externes sont invisibles <span class="chip bad">structurant</span></h4>
+        <p>Une app qui fait confiance à <code>/api/stacks</code> affiche un stack sur quatre. C'est le piège le plus coûteux du lot, parce qu'il ne se voit qu'avec de vraies données : sur une instance neuve où tout a été créé dans Portainer, tout semble parfait.</p>
+        <p class="fix"><b>Solution :</b> fusionner les deux sources dès le repository, jamais dans l'interface. Un stack déduit expose les mêmes actions qu'un stack géré ; seule l'implémentation diffère.</p>
+      </div>
+
+      <div class="risk">
+        <h4>Le poids de <code>/api/endpoints</code> <span class="chip ok">résolu</span></h4>
+        <p>La route ne renvoie pas que la liste des environnements : elle embarque un instantané complet des conteneurs, volumes et images. Mesurée sur le NAS à <strong>938 292 octets</strong>. Pour une app censée répondre en trois secondes sur un lien VPN, c'est disqualifiant.</p>
+        <p class="fix"><b>Mesuré :</b> <code>?excludeSnapshots=true</code> ramène la route à <strong>3 547 octets</strong> en 2.31.3 et <strong>3 606</strong> en 2.19.4 — rapports de 264 et 89 pour 1. Supporté aux deux bouts de l'intervalle, donc aucun repli à écrire. Et sans danger à envoyer partout : une version qui l'ignore renvoie la charge complète, jamais un résultat faux.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">06</span><h2>Découpage et charge</h2></div>
+    <p class="lead">Cinq phases, chacune livrable et utilisable seule. Les estimations supposent que tu es à l'aise en Kotlin ; ajoute 50 % si Compose est nouveau pour toi.</p>
+
+    <div class="phases">
+      <div class="phase now">
+        <div class="pnum">00</div>
+        <div>
+          <h4>Monter le banc d'essai</h4>
+          <p>Lancer un Portainer d'une version antérieure sur le Docker Desktop du PC, y créer deux ou trois stacks jetables. Générer un jeton sur chacune des deux instances, rejouer les onze appels en <code>curl</code>, archiver les réponses. Les écarts entre les deux JSON sont ta spécification de compatibilité.</p>
+        </div>
+        <div class="cost">2 h<span>à faire</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="pnum">01</div>
+        <div>
+          <h4>Socle et authentification</h4>
+          <p>Projet Compose, écran de configuration d'un serveur, les deux modes d'authentification, stockage chiffré, un premier appel qui affiche la liste des environnements.</p>
+        </div>
+        <div class="cost">6 h<span>estimé</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="pnum">02</div>
+        <div>
+          <h4>Le cœur : stacks et conteneurs</h4>
+          <p>Liste des stacks groupés par environnement, détail avec les conteneurs, démarrer / arrêter / relancer, retour visuel immédiat, gestion des erreurs. Inclut le sondage de capacités et le masquage de ce qui n'est pas pilotable. À ce stade, l'app est déjà utile.</p>
+        </div>
+        <div class="cost">14 h<span>estimé</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="pnum">03</div>
+        <div>
+          <h4>Logs</h4>
+          <p>Écran de logs avec démultiplexage, deux cents dernières lignes, rafraîchissement manuel, recherche dans le texte.</p>
+        </div>
+        <div class="cost">5 h<span>estimé</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="pnum">04</div>
+        <div>
+          <h4>Widget et tuile</h4>
+          <p>Widget Glance listant les stacks favoris avec un bouton d'action, tuile Quick Settings câblée sur une action unique. C'est la phase qui justifie tout le projet.</p>
+        </div>
+        <div class="cost">8 h<span>estimé</span></div>
+      </div>
+
+      <div class="phase">
+        <div class="pnum">05</div>
+        <div>
+          <h4>Plusieurs serveurs et finitions</h4>
+          <p>Basculer entre NAS, favoris, thème sombre, icône, signature de l'APK pour installation directe.</p>
+        </div>
+        <div class="cost">5 h<span>estimé</span></div>
+      </div>
+    </div>
+
+    <p style="margin-top:22px"><strong>Total : environ 40 heures</strong>, soit cinq à six week-ends de travail. L&#39;app devient réellement utilisable dès la fin de la phase 2, aux alentours de la vingt-deuxième heure.</p>
+  </section>
+
+  <section>
+    <div class="h2-rule"><span class="num">07</span><h2>Trois décisions restées ouvertes</h2></div>
+    <p class="lead">Elles ne bloquent pas le démarrage, mais elles se tranchent mieux avant la phase 2 qu'après.</p>
+    <ul>
+      <li><strong>Rafraîchissement.</strong> Interroger le serveur toutes les cinq secondes tant que l'écran est ouvert, ou uniquement au geste de tirage vers le bas ? Le sondage vide la batterie sur VPN ; le manuel est plus honnête et plus simple.</li>
+      <li><strong>Distribution.</strong> APK signé installé à la main, ou publication sur le Play Store ? Le Play Store impose un compte développeur payant et une politique de confidentialité, pour une app que tu es probablement seul à utiliser.</li>
+      <li><strong>Confirmation des arrêts.</strong> Une boîte de dialogue avant chaque arrêt protège des fausses manipulations mais alourdit l'usage quotidien. Un compromis : confirmation uniquement au niveau du stack, pas du conteneur.</li>
+    </ul>
+  </section>
+
+  <footer>
+    Étude préparatoire — aucune ligne de code écrite. Prochain jalon : phase 00, reconnaissance.
+  </footer>
+
+</div>

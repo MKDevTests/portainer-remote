@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Le trafic en clair est autorise, et c'est un choix, pas un oubli.
+
+  Cette application parle a des Portainer d'infrastructure privee, joints par
+  LAN ou par VPN, dont beaucoup n'ont qu'un HTTP local ou un certificat
+  auto-signe. Les restreindre par adresse est impossible ici : les entrees
+  <domain> d'Android designent des noms d'hotes, pas des plages IP - ecrire
+  192.168.1.0 ne couvre pas 192.168.1.42, ca ne couvre litteralement rien.
+
+  La compensation est dans l'application : l'ecran de configuration signale
+  toute adresse en http:// qui n'est pas locale, pour que le choix reste
+  visible au moment ou il est fait.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
