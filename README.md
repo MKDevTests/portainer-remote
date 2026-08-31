@@ -21,6 +21,7 @@ géométrie tablette. Seul l'écran de logs reste à faire.
 | Démarrer / arrêter / relancer | fait |
 | Redéployer avec images à jour | fait |
 | Gestion des images, suppression des inutilisées | fait |
+| Onglet Stacks et onglet Conteneurs à plat | fait |
 | Recherche, tri et filtre par état | fait |
 | Mise en page téléphone et tablette | fait |
 | Widget et tuile Quick Settings | fait |

@@ -49,6 +49,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -178,6 +180,23 @@ fun StacksScreen(
                         // bord gauche sur tablette au lieu d'occuper le centre.
                         .align(Alignment.TopCenter),
                 ) {
+                    TabRow(selectedTabIndex = ui.tab.ordinal) {
+                        StacksTab.entries.forEach { entry ->
+                            Tab(
+                                selected = ui.tab == entry,
+                                onClick = { viewModel.setTab(entry) },
+                                text = {
+                                    val count = when (entry) {
+                                        StacksTab.STACKS ->
+                                            ui.visibleGroups.sumOf { it.stacks.size }
+                                        StacksTab.CONTAINERS -> ui.visibleContainers.size
+                                    }
+                                    Text("${entry.label} · $count")
+                                },
+                            )
+                        }
+                    }
+
                     if (searchOpen) {
                         OutlinedTextField(
                             value = ui.query,
@@ -215,6 +234,18 @@ fun StacksScreen(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(24.dp),
+                        )
+                        return@Column
+                    }
+
+                    if (ui.tab == StacksTab.CONTAINERS) {
+                        ContainersGrid(
+                            entries = ui.visibleContainers,
+                            columns = columns,
+                            busy = ui.busy,
+                            onAction = { entry, action ->
+                                viewModel.actOnContainer(entry.stack, entry.container, action)
+                            },
                         )
                         return@Column
                     }
@@ -280,6 +311,133 @@ fun StacksScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Tous les conteneurs, sortis de leurs stacks.
+ *
+ * L'onglet stacks repond a « dans quel etat est ce service » ; celui-ci repond
+ * a « ou est passe ce conteneur ». D'ou l'image et le stack d'origine affiches
+ * sur chaque carte : sans eux, deux conteneurs nommes `web` sont identiques.
+ */
+@Composable
+private fun ContainersGrid(
+    entries: List<ContainerEntry>,
+    columns: Int,
+    busy: Set<String>,
+    onAction: (ContainerEntry, StackAction) -> Unit,
+) {
+    if (entries.isEmpty()) {
+        Text(
+            "Aucun conteneur.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(24.dp),
+        )
+        return
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(entries, key = { it.container.id }) { entry ->
+            ContainerCard(
+                entry = entry,
+                busy = entry.container.id in busy,
+                onAction = { action -> onAction(entry, action) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContainerCard(
+    entry: ContainerEntry,
+    busy: Boolean,
+    onAction: (StackAction) -> Unit,
+) {
+    val container = entry.container
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    container.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                StateChip(
+                    if (container.running) RunState.RUNNING else RunState.STOPPED,
+                    if (container.running) 1 else 0,
+                    1,
+                )
+            }
+
+            Text(
+                container.image,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        entry.stack.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        container.statusText.ifBlank { container.state },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                if (busy) {
+                    Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    }
+                } else if (container.running) {
+                    IconButton(onClick = { onAction(StackAction.STOP) }) {
+                        Icon(Icons.Default.Stop, contentDescription = "Arrêter ${container.name}")
+                    }
+                    IconButton(onClick = { onAction(StackAction.RESTART) }) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Relancer ${container.name}",
+                        )
+                    }
+                } else {
+                    IconButton(onClick = { onAction(StackAction.START) }) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Démarrer ${container.name}",
+                        )
                     }
                 }
             }

@@ -24,6 +24,26 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+enum class StacksTab(val label: String) {
+    STACKS("Stacks"),
+    CONTAINERS("Conteneurs"),
+}
+
+/**
+ * Un conteneur sorti de son stack, pour l'onglet a plat.
+ *
+ * Il garde une reference a son stack : les routes d'action de Portainer ont
+ * besoin de l'environnement, et l'affichage a besoin de dire d'ou vient le
+ * conteneur — sans quoi deux `web` de deux stacks differents sont
+ * indiscernables.
+ */
+data class ContainerEntry(
+    val envId: Int,
+    val envName: String,
+    val stack: StackView,
+    val container: ContainerView,
+)
+
 data class StacksUi(
     val server: Server? = null,
     val groups: List<EnvGroup> = emptyList(),
@@ -36,6 +56,7 @@ data class StacksUi(
     val query: String = "",
     val filter: StackFilter = StackFilter.ALL,
     val sort: StackSort = StackSort.NAME_ASC,
+    val tab: StacksTab = StacksTab.STACKS,
 ) {
     /**
      * Recherche, filtre et tri appliqués à l'affichage seulement : les données
@@ -76,9 +97,52 @@ data class StacksUi(
             }
         }
 
+    /**
+     * Les memes conteneurs, sortis de leurs stacks. La recherche porte ici sur
+     * l'image en plus du nom : c'est souvent par elle qu'on retrouve un
+     * conteneur dont on ne sait plus dans quel stack il vit.
+     */
+    val visibleContainers: List<ContainerEntry>
+        get() {
+            val needle = query.trim().lowercase()
+            val comparator = when (sort) {
+                StackSort.NAME_ASC -> compareBy<ContainerEntry> { it.container.name.lowercase() }
+                StackSort.NAME_DESC ->
+                    compareByDescending<ContainerEntry> { it.container.name.lowercase() }
+                StackSort.STATE -> compareBy<ContainerEntry> { if (it.container.running) 0 else 1 }
+                    .thenBy { it.container.name.lowercase() }
+            }
+
+            return groups
+                .flatMap { group ->
+                    group.stacks.flatMap { stack ->
+                        stack.containers.map { ContainerEntry(group.envId, group.envName, stack, it) }
+                    }
+                }
+                .filter { entry ->
+                    val matchesQuery = needle.isEmpty() ||
+                        entry.container.name.lowercase().contains(needle) ||
+                        entry.container.image.lowercase().contains(needle) ||
+                        entry.stack.name.lowercase().contains(needle)
+
+                    val matchesFilter = when (filter) {
+                        StackFilter.ALL -> true
+                        StackFilter.RUNNING -> entry.container.running
+                        StackFilter.STOPPED -> !entry.container.running
+                    }
+
+                    matchesQuery && matchesFilter
+                }
+                .sortedWith(comparator)
+        }
+
     val filtering: Boolean get() = query.isNotBlank() || filter != StackFilter.ALL
 
-    val visibleCount: Int get() = visibleGroups.sumOf { it.stacks.size }
+    val visibleCount: Int
+        get() = when (tab) {
+            StacksTab.STACKS -> visibleGroups.sumOf { it.stacks.size }
+            StacksTab.CONTAINERS -> visibleContainers.size
+        }
 }
 
 class StacksViewModel(
@@ -178,6 +242,8 @@ class StacksViewModel(
             widgetSync.refresh()
         }
     }
+
+    fun setTab(value: StacksTab) = _ui.update { it.copy(tab = value) }
 
     fun setQuery(value: String) = _ui.update { it.copy(query = value) }
 
