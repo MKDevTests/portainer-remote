@@ -111,6 +111,14 @@ enum class StackSort(val label: String) {
     STATE("État d'abord"),
 }
 
+enum class ImageFilter(val label: String) {
+    ALL("Toutes"),
+    UNUSED("Inutilisées"),
+
+    /** Sous-ensemble des inutilisees : les residus de build et de mise a jour. */
+    UNTAGGED("Sans étiquette"),
+}
+
 data class ImageView(
     val id: String,
     val tags: List<String>,

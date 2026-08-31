@@ -20,7 +20,7 @@ géométrie tablette. Seul l'écran de logs reste à faire.
 | Liste des stacks et des conteneurs | fait |
 | Démarrer / arrêter / relancer | fait |
 | Redéployer avec images à jour | fait |
-| Gestion des images, suppression des inutilisées | fait |
+| Gestion des images, filtre inutilisées / sans étiquette | fait |
 | Onglet Stacks et onglet Conteneurs à plat | fait |
 | Recherche, tri et filtre par état | fait |
 | Mise en page téléphone et tablette | fait |

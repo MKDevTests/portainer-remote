@@ -6,6 +6,7 @@ import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.PortainerRepository
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.domain.ImageFilter
 import dev.mkdev.portainerremote.domain.ImageGroup
 import dev.mkdev.portainerremote.domain.ImageView
 import dev.mkdev.portainerremote.domain.Server
@@ -24,7 +25,21 @@ data class ImagesUi(
     val message: String? = null,
     /** Image dont la suppression attend confirmation. */
     val pendingDelete: Pair<Int, ImageView>? = null,
-)
+    val filter: ImageFilter = ImageFilter.ALL,
+) {
+    /**
+     * Le filtre ne s'applique qu'a la liste, jamais a l'en-tete : le volume
+     * recuperable annonce reste celui de l'environnement entier, sinon filtrer
+     * ferait fondre le chiffre qui motive le menage.
+     */
+    fun visibleImages(group: ImageGroup): List<ImageView> = when (filter) {
+        ImageFilter.ALL -> group.images
+        ImageFilter.UNUSED -> group.images.filterNot { it.inUse }
+        ImageFilter.UNTAGGED -> group.images.filter { it.dangling }
+    }
+
+    val visibleCount: Int get() = groups.sumOf { visibleImages(it).size }
+}
 
 class ImagesViewModel(
     private val serverId: String,
@@ -85,6 +100,8 @@ class ImagesViewModel(
             refresh()
         }
     }
+
+    fun setFilter(value: ImageFilter) = _ui.update { it.copy(filter = value) }
 
     fun dismissMessage() = _ui.update { it.copy(message = null) }
 }

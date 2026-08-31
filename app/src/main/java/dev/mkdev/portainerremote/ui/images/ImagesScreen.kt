@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -21,6 +23,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.domain.ImageFilter
 import dev.mkdev.portainerremote.domain.ImageGroup
 import dev.mkdev.portainerremote.domain.ImageView
 import dev.mkdev.portainerremote.ui.components.UsageChip
@@ -132,6 +136,35 @@ fun ImagesScreen(
                 return@Column
             }
 
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.CenterHorizontally)
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ImageFilter.entries.forEach { entry ->
+                    FilterChip(
+                        selected = ui.filter == entry,
+                        onClick = { viewModel.setFilter(entry) },
+                        label = { Text(entry.label) },
+                    )
+                }
+            }
+
+            if (ui.filter != ImageFilter.ALL && ui.visibleCount == 0) {
+                Text(
+                    "Aucune image ne correspond.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(24.dp).align(Alignment.CenterHorizontally),
+                )
+                return@Column
+            }
+
             LazyColumn(
                 // Bornee sans etre alignee, la liste resterait collee au bord
                 // gauche sur tablette.
@@ -145,7 +178,9 @@ fun ImagesScreen(
                 ui.groups.forEach { group ->
                     item(key = "hdr-${group.envId}") { GroupHeader(group) }
 
-                    items(group.images, key = { it.id }) { image ->
+                    val visible = ui.visibleImages(group)
+
+                    items(visible, key = { it.id }) { image ->
                         ImageCard(
                             image = image,
                             busy = image.id in ui.busy,
@@ -153,10 +188,14 @@ fun ImagesScreen(
                         )
                     }
 
-                    if (group.images.isEmpty()) {
+                    if (visible.isEmpty()) {
                         item(key = "empty-${group.envId}") {
                             Text(
-                                "Aucune image sur cet environnement.",
+                                if (ui.filter == ImageFilter.ALL) {
+                                    "Aucune image sur cet environnement."
+                                } else {
+                                    "Aucune image de cette catégorie ici."
+                                },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
