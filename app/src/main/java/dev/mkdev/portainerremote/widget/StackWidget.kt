@@ -25,11 +25,9 @@ import androidx.glance.background
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
-import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.padding
-import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -72,6 +70,12 @@ class StackWidget : GlanceAppWidget() {
     }
 }
 
+/*
+ * Attention : ne pas introduire de Spacer sans dimension ici. Un
+ * Spacer(GlanceModifier.padding(...)) sans width ni height fait disparaitre
+ * tout ce qui le suit dans la colonne, sans lever la moindre exception.
+ * L'espacement se met en padding sur l'element concerne.
+ */
 @Composable
 private fun WidgetBody(snapshot: WidgetSnapshot) {
     Column(
@@ -102,12 +106,11 @@ private fun WidgetBody(snapshot: WidgetSnapshot) {
             )
         }
 
-        Spacer(GlanceModifier.padding(top = 4.dp))
-
         if (snapshot.entries.isEmpty()) {
             Text(
                 text = "Aucun favori. Épingle un stack depuis l'application avec l'étoile.",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 13.sp),
+                modifier = GlanceModifier.padding(top = 6.dp),
             )
         } else {
             snapshot.entries.forEach { entry -> StackRow(entry, snapshot.stale) }
@@ -138,8 +141,8 @@ private fun StackRow(entry: WidgetEntry, stale: Boolean) {
                 color = ColorProvider(if (stale) Stopped else color),
                 fontSize = 14.sp,
             ),
+            modifier = GlanceModifier.padding(end = 8.dp),
         )
-        Spacer(GlanceModifier.width(8.dp))
         Text(
             text = entry.name,
             maxLines = 1,
