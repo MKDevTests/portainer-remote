@@ -99,6 +99,18 @@ enum class StackAction {
     REDEPLOY,
 }
 
+enum class StackFilter(val label: String) {
+    ALL("Tous"),
+    RUNNING("En marche"),
+    STOPPED("Arrêtés"),
+}
+
+enum class StackSort(val label: String) {
+    NAME_ASC("Nom (A → Z)"),
+    NAME_DESC("Nom (Z → A)"),
+    STATE("État d'abord"),
+}
+
 data class ImageView(
     val id: String,
     val tags: List<String>,

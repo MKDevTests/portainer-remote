@@ -36,6 +36,7 @@ fun App() {
                 container.repository,
                 container.favoritesStore,
                 container.widgetSync,
+                container.updateChecker,
             )
         }
     }

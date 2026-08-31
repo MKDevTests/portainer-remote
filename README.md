@@ -10,9 +10,8 @@ son auteur.
 
 ## État
 
-Utilisable. Configuration des serveurs, liste des stacks et actions sont en
-place et testées sur un appareil réel. Les logs et le widget d'écran d'accueil
-ne sont pas encore faits.
+Utilisable. Tout est testé sur un appareil réel, en géométrie téléphone et en
+géométrie tablette. Seul l'écran de logs reste à faire.
 
 | Fonctionnalité | État |
 | --- | --- |
@@ -22,8 +21,21 @@ ne sont pas encore faits.
 | Démarrer / arrêter / relancer | fait |
 | Redéployer avec images à jour | fait |
 | Gestion des images, suppression des inutilisées | fait |
+| Recherche, tri et filtre par état | fait |
+| Mise en page téléphone et tablette | fait |
+| Widget et tuile Quick Settings | fait |
+| Notification des nouvelles releases GitHub | fait |
 | Consultation des logs | démultiplexeur écrit, écran à faire |
-| Widget et tuile Quick Settings | à faire |
+
+### Mises à jour
+
+L'application interroge au démarrage la dernière release du dépôt nommé par
+`UPDATE_REPO` dans `app/build.gradle.kts`, et signale une version plus récente
+que celle installée. Elle ouvre le lien de téléchargement ; elle n'installe
+rien. Réclamer `REQUEST_INSTALL_PACKAGES` serait exactement la permission qu'on
+ne veut pas accorder à une application de pilotage d'infrastructure.
+
+Un fork ne change que cette ligne : rien d'autre dans le code ne nomme le dépôt.
 
 ## Cinq règles de conception
 

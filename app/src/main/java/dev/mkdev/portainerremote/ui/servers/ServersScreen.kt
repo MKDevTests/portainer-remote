@@ -1,7 +1,9 @@
 package dev.mkdev.portainerremote.ui.servers
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,8 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -21,6 +25,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -28,8 +33,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
+import dev.mkdev.portainerremote.data.net.ReleaseInfo
 import dev.mkdev.portainerremote.domain.AuthMode
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,6 +49,7 @@ fun ServersScreen(
     onAdd: () -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
+    val update by viewModel.update.collectAsState()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Serveurs Portainer") }) },
@@ -50,13 +59,16 @@ fun ServersScreen(
             }
         },
     ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+
+        update?.let { release -> UpdateBanner(release, onDismiss = viewModel::dismissUpdate) }
+
         if (servers.isEmpty()) {
             // Sur tablette, un texte laisse libre s'etale sur 1600 px et devient
             // illisible : on le centre et on borne sa largeur de ligne.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
                     .padding(32.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -81,10 +93,15 @@ fun ServersScreen(
                 }
             }
         } else {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                // Une liste seulement bornee en largeur reste collee au bord
+                // gauche sur tablette : c'est le parent qui doit la recentrer.
+                contentAlignment = Alignment.TopCenter,
+            ) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding)
                     // Des cartes larges de 1600 px sur tablette obligent l'oeil a
                     // traverser l'ecran pour relier un nom a son bouton.
                     .widthIn(max = 720.dp),
@@ -127,6 +144,68 @@ fun ServersScreen(
                         }
                     }
                 }
+            }
+            }
+        }
+        }
+    }
+}
+
+/**
+ * Annonce une release GitHub plus recente que la version installee.
+ *
+ * Le bouton ouvre le lien, il n'installe rien : installer un APK demanderait la
+ * permission REQUEST_INSTALL_PACKAGES, qui est exactement celle qu'on ne veut
+ * pas accorder a une application de pilotage d'infrastructure.
+ */
+@Composable
+private fun UpdateBanner(release: ReleaseInfo, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "Mise à jour disponible : " + release.version,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(
+                        release.title,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Ignorer")
+                }
+            }
+
+            if (release.notes.isNotBlank()) {
+                Text(
+                    release.notes,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+
+            TextButton(
+                onClick = {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, release.downloadUrl.toUri()))
+                },
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(if (release.hasApk) "Télécharger l'APK" else "Voir la release")
             }
         }
     }

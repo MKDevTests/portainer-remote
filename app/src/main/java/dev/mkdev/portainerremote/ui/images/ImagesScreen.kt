@@ -133,7 +133,12 @@ fun ImagesScreen(
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize().widthIn(max = 720.dp),
+                // Bornee sans etre alignee, la liste resterait collee au bord
+                // gauche sur tablette.
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 720.dp)
+                    .align(Alignment.CenterHorizontally),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {

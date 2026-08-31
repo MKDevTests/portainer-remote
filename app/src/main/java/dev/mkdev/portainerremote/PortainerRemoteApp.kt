@@ -8,6 +8,7 @@ import dev.mkdev.portainerremote.data.PortainerRepository
 import dev.mkdev.portainerremote.data.WidgetSync
 import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.data.net.UpdateChecker
 
 /** Injection manuelle : l'app est trop petite pour justifier un conteneur. */
 class AppContainer(context: Context) {
@@ -16,6 +17,7 @@ class AppContainer(context: Context) {
     val favoritesStore = FavoritesStore(appContext)
     val repository = PortainerRepository(serverStore)
     val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository)
+    val updateChecker = UpdateChecker()
 }
 
 class PortainerRemoteApp : Application() {

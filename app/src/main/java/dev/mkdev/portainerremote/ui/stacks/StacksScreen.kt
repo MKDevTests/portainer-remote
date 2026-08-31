@@ -1,8 +1,10 @@
 package dev.mkdev.portainerremote.ui.stacks
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,10 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -23,6 +29,8 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
@@ -32,10 +40,12 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -51,16 +61,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
 import dev.mkdev.portainerremote.domain.RunState
 import dev.mkdev.portainerremote.domain.StackAction
+import dev.mkdev.portainerremote.domain.StackFilter
 import dev.mkdev.portainerremote.domain.StackOrigin
+import dev.mkdev.portainerremote.domain.StackSort
 import dev.mkdev.portainerremote.domain.StackView
 import dev.mkdev.portainerremote.ui.components.OriginChip
 import dev.mkdev.portainerremote.ui.components.StateChip
+
+/**
+ * Seuil tablette. En dessous, une seule colonne : deux cartes de stack cote a
+ * cote sur un telephone laisseraient le nom tronque des le premier mot.
+ */
+private val TwoColumnBreakpoint = 700.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +92,9 @@ fun StacksScreen(
     val ui by viewModel.ui.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
+    var searchOpen by remember { mutableStateOf(false) }
+    var sortOpen by remember { mutableStateOf(false) }
+    val searchFocus = remember { FocusRequester() }
 
     LaunchedEffect(ui.message) {
         ui.message?.let {
@@ -90,6 +113,23 @@ fun StacksScreen(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = {
+                            searchOpen = !searchOpen
+                            // Fermer la recherche doit aussi la vider : sinon on
+                            // repart d'une liste filtree sans indice visible.
+                            if (!searchOpen) viewModel.setQuery("")
+                        },
+                    ) {
+                        Icon(
+                            if (searchOpen) Icons.Default.Close else Icons.Default.Search,
+                            contentDescription = if (searchOpen) {
+                                "Fermer la recherche"
+                            } else {
+                                "Rechercher"
+                            },
+                        )
+                    }
                     IconButton(onClick = onOpenImages) {
                         Icon(Icons.Default.Layers, contentDescription = "Images")
                     }
@@ -108,7 +148,10 @@ fun StacksScreen(
 
             val error = ui.error
             if (error != null && ui.groups.isEmpty()) {
-                Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center) {
+                Column(
+                    Modifier.fillMaxSize().padding(32.dp),
+                    verticalArrangement = Arrangement.Center,
+                ) {
                     Text("Rien à afficher", style = MaterialTheme.typography.titleMedium)
                     Text(
                         error,
@@ -120,51 +163,180 @@ fun StacksScreen(
                 return@Column
             }
 
-            LazyColumn(
-                // Meme borne que la liste des serveurs : au-dela, le nom du stack
-                // et ses boutons se retrouvent aux deux extremites de l'ecran.
-                modifier = Modifier.fillMaxSize().widthIn(max = 720.dp),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                ui.groups.forEach { group ->
-                    item(key = "env-${group.envId}") { EnvHeader(group) }
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val wide = maxWidth >= TwoColumnBreakpoint
+                val columns = if (wide) 2 else 1
+                // Une colonne unique reste bornee pour rester lisible ; deux
+                // colonnes ont besoin du double, sinon les cartes se resserrent.
+                val contentWidth = if (wide) 1100.dp else 720.dp
 
-                    if (!group.dockerCapable) {
-                        item(key = "env-${group.envId}-unsupported") {
-                            Text(
-                                "Environnement ${group.kindLabel} : cette application ne pilote " +
-                                    "que les environnements Docker.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-
-                    items(group.stacks, key = { it.key }) { stack ->
-                        StackCard(
-                            stack = stack,
-                            busy = ui.busy,
-                            favorite = stack.key in ui.favorites,
-                            expanded = expanded[stack.key] == true,
-                            onToggle = { expanded[stack.key] = expanded[stack.key] != true },
-                            onToggleFavorite = { viewModel.toggleFavorite(stack) },
-                            onAction = { action -> viewModel.act(stack, action) },
-                            onContainerAction = { container, action ->
-                                viewModel.actOnContainer(stack, container, action)
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = contentWidth)
+                        // Sans cet alignement, la liste bornee reste collee au
+                        // bord gauche sur tablette au lieu d'occuper le centre.
+                        .align(Alignment.TopCenter),
+                ) {
+                    if (searchOpen) {
+                        OutlinedTextField(
+                            value = ui.query,
+                            onValueChange = viewModel::setQuery,
+                            singleLine = true,
+                            label = { Text("Nom d'un stack ou d'un conteneur") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            trailingIcon = {
+                                if (ui.query.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.setQuery("") }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Effacer")
+                                    }
+                                }
                             },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .focusRequester(searchFocus),
                         )
+                        LaunchedEffect(Unit) { searchFocus.requestFocus() }
                     }
 
-                    if (group.dockerCapable && group.stacks.isEmpty()) {
-                        item(key = "env-${group.envId}-empty") {
-                            Text(
-                                "Aucun conteneur sur cet environnement.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                    FilterBar(
+                        filter = ui.filter,
+                        sort = ui.sort,
+                        sortOpen = sortOpen,
+                        onFilter = viewModel::setFilter,
+                        onSortOpen = { sortOpen = it },
+                        onSort = viewModel::setSort,
+                    )
+
+                    if (ui.filtering && ui.visibleCount == 0) {
+                        Text(
+                            "Aucun stack ne correspond.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(24.dp),
+                        )
+                        return@Column
+                    }
+
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        ui.visibleGroups.forEach { group ->
+                            // Un filtre actif qui vide un environnement ne doit
+                            // pas laisser son en-tete seul en haut de la liste.
+                            if (ui.filtering && group.stacks.isEmpty()) return@forEach
+
+                            item(
+                                key = "env-${group.envId}",
+                                span = { GridItemSpan(maxLineSpan) },
+                            ) { EnvHeader(group) }
+
+                            if (!group.dockerCapable) {
+                                item(
+                                    key = "env-${group.envId}-unsupported",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                ) {
+                                    Text(
+                                        "Environnement ${group.kindLabel} : cette application ne " +
+                                            "pilote que les environnements Docker.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+
+                            items(group.stacks, key = { it.key }) { stack ->
+                                StackCard(
+                                    stack = stack,
+                                    busy = ui.busy,
+                                    favorite = stack.key in ui.favorites,
+                                    expanded = expanded[stack.key] == true,
+                                    onToggle = {
+                                        expanded[stack.key] = expanded[stack.key] != true
+                                    },
+                                    onToggleFavorite = { viewModel.toggleFavorite(stack) },
+                                    onAction = { action -> viewModel.act(stack, action) },
+                                    onContainerAction = { container, action ->
+                                        viewModel.actOnContainer(stack, container, action)
+                                    },
+                                )
+                            }
+
+                            if (group.dockerCapable && group.stacks.isEmpty()) {
+                                item(
+                                    key = "env-${group.envId}-empty",
+                                    span = { GridItemSpan(maxLineSpan) },
+                                ) {
+                                    Text(
+                                        "Aucun conteneur sur cet environnement.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FilterBar(
+    filter: StackFilter,
+    sort: StackSort,
+    sortOpen: Boolean,
+    onFilter: (StackFilter) -> Unit,
+    onSortOpen: (Boolean) -> Unit,
+    onSort: (StackSort) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Le defilement horizontal evite que le bouton de tri sorte de
+            // l'ecran sur les telephones etroits.
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StackFilter.entries.forEach { entry ->
+            FilterChip(
+                selected = filter == entry,
+                onClick = { onFilter(entry) },
+                label = { Text(entry.label) },
+            )
+        }
+
+        Box {
+            FilterChip(
+                selected = sort != StackSort.NAME_ASC,
+                onClick = { onSortOpen(true) },
+                label = { Text(sort.label) },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Sort,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                },
+            )
+            DropdownMenu(expanded = sortOpen, onDismissRequest = { onSortOpen(false) }) {
+                StackSort.entries.forEach { entry ->
+                    DropdownMenuItem(
+                        text = { Text(entry.label) },
+                        onClick = {
+                            onSortOpen(false)
+                            onSort(entry)
+                        },
+                    )
                 }
             }
         }
@@ -291,7 +463,9 @@ private fun StackCard(
                                     menuOpen = false
                                     onAction(StackAction.RESTART)
                                 },
-                                leadingIcon = { Icon(Icons.Default.Refresh, contentDescription = null) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Refresh, contentDescription = null)
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text("Relancer avec images à jour") },
@@ -300,7 +474,9 @@ private fun StackCard(
                                     menuOpen = false
                                     onAction(StackAction.REDEPLOY)
                                 },
-                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Download, contentDescription = null)
+                                },
                             )
                             if (stack.managedId == null) {
                                 DropdownMenuItem(

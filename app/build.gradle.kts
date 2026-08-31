@@ -15,6 +15,10 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        // Depot consulte pour les mises a jour. Un fork ne change que cette
+        // ligne : rien d'autre dans le code ne nomme le depot.
+        buildConfigField("String", "UPDATE_REPO", "\"MKDevTests/portainer-remote\"")
     }
 
     buildTypes {
@@ -31,6 +35,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

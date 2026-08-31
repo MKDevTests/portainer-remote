@@ -15,6 +15,8 @@ import dev.mkdev.portainerremote.domain.Outcome
 import dev.mkdev.portainerremote.domain.RunState
 import dev.mkdev.portainerremote.domain.Server
 import dev.mkdev.portainerremote.domain.StackAction
+import dev.mkdev.portainerremote.domain.StackFilter
+import dev.mkdev.portainerremote.domain.StackSort
 import dev.mkdev.portainerremote.domain.StackView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,7 +33,53 @@ data class StacksUi(
     val message: String? = null,
     /** Clés des stacks épinglés, pour le widget et la tuile. */
     val favorites: Set<String> = emptySet(),
-)
+    val query: String = "",
+    val filter: StackFilter = StackFilter.ALL,
+    val sort: StackSort = StackSort.NAME_ASC,
+) {
+    /**
+     * Recherche, filtre et tri appliqués à l'affichage seulement : les données
+     * brutes restent intactes, si bien qu'effacer la recherche ne coûte pas un
+     * appel réseau.
+     */
+    val visibleGroups: List<EnvGroup>
+        get() {
+            val needle = query.trim().lowercase()
+            val comparator = when (sort) {
+                StackSort.NAME_ASC -> compareBy<StackView> { it.name.lowercase() }
+                StackSort.NAME_DESC -> compareByDescending<StackView> { it.name.lowercase() }
+                // En marche d'abord, puis partiels, puis arrêtés.
+                StackSort.STATE -> compareBy<StackView> { it.runState.ordinal }
+                    .thenBy { it.name.lowercase() }
+            }
+
+            return groups.map { group ->
+                group.copy(
+                    stacks = group.stacks
+                        .filter { stack ->
+                            val matchesQuery = needle.isEmpty() ||
+                                stack.name.lowercase().contains(needle) ||
+                                // La recherche porte aussi sur les conteneurs :
+                                // on cherche souvent un service, pas un stack.
+                                stack.containers.any { it.name.lowercase().contains(needle) }
+
+                            val matchesFilter = when (filter) {
+                                StackFilter.ALL -> true
+                                StackFilter.RUNNING -> stack.runState != RunState.STOPPED
+                                StackFilter.STOPPED -> stack.runState == RunState.STOPPED
+                            }
+
+                            matchesQuery && matchesFilter
+                        }
+                        .sortedWith(comparator),
+                )
+            }
+        }
+
+    val filtering: Boolean get() = query.isNotBlank() || filter != StackFilter.ALL
+
+    val visibleCount: Int get() = visibleGroups.sumOf { it.stacks.size }
+}
 
 class StacksViewModel(
     private val serverId: String,
@@ -130,6 +178,12 @@ class StacksViewModel(
             widgetSync.refresh()
         }
     }
+
+    fun setQuery(value: String) = _ui.update { it.copy(query = value) }
+
+    fun setFilter(value: StackFilter) = _ui.update { it.copy(filter = value) }
+
+    fun setSort(value: StackSort) = _ui.update { it.copy(sort = value) }
 
     fun dismissMessage() = _ui.update { it.copy(message = null) }
 
