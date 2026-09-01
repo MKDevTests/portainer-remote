@@ -59,6 +59,7 @@ data class ReleaseInfo(
 class UpdateChecker(
     private val repo: String = BuildConfig.UPDATE_REPO,
     private val currentVersion: String = BuildConfig.VERSION_NAME,
+    private val apiRoot: String = BuildConfig.UPDATE_API,
 ) {
 
     private val http = HttpClient(OkHttp) {
@@ -77,7 +78,7 @@ class UpdateChecker(
         // Trace volontaire : l'echec est silencieux pour l'utilisateur, il faut
         // donc qu'il reste diagnosticable au logcat.
         Log.d(TAG, "verification des releases de $repo, version installee $currentVersion")
-        val response = http.get("https://api.github.com/repos/$repo/releases/latest") {
+        val response = http.get("$apiRoot/repos/$repo/releases/latest") {
             // GitHub refuse les requetes sans User-Agent.
             header("User-Agent", "portainer-remote/$currentVersion")
             header("Accept", "application/vnd.github+json")

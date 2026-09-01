@@ -155,6 +155,11 @@ fun LogsScreen(
                     label = { Text("Horodatage") },
                 )
                 FilterChip(
+                    selected = ui.wrap,
+                    onClick = { viewModel.toggleWrap() },
+                    label = { Text("Retour à la ligne") },
+                )
+                FilterChip(
                     selected = false,
                     onClick = {
                         clipboard.setText(AnnotatedString(viewModel.copyText()))
@@ -194,24 +199,38 @@ fun LogsScreen(
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 itemsIndexed(lines) { index, line ->
-                    Box(
-                        // Une ligne de log ne se replie pas : elle defile.
-                        // Retour a la ligne force, on ne saurait plus ou commence
-                        // l'entree suivante.
-                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    ) {
+                    val color = if (index % 2 == 0) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    }
+
+                    if (ui.wrap) {
+                        // Repliee, une ligne tient a l'ecran mais on ne voit plus
+                        // ou commence la suivante : d'ou l'alternance de teinte,
+                        // qui redonne cette frontiere.
                         Text(
                             line,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
-                            softWrap = false,
-                            color = if (index % 2 == 0) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                            modifier = Modifier.padding(vertical = 1.dp),
+                            color = color,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
                         )
+                    } else {
+                        Box(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        ) {
+                            Text(
+                                line,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp,
+                                softWrap = false,
+                                color = color,
+                                modifier = Modifier.padding(vertical = 1.dp),
+                            )
+                        }
                     }
                 }
             }

@@ -5,6 +5,7 @@ import android.net.Uri
 import dev.mkdev.portainerremote.BuildConfig
 import dev.mkdev.portainerremote.data.store.FavoriteStack
 import dev.mkdev.portainerremote.data.store.FavoritesStore
+import dev.mkdev.portainerremote.data.store.PrefsStore
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.domain.AuthMode
 import dev.mkdev.portainerremote.domain.Server
@@ -32,7 +33,11 @@ class BackupManager(
     private val context: Context,
     private val serverStore: ServerStore,
     private val favoritesStore: FavoritesStore,
+    private val prefsStore: PrefsStore,
 ) {
+
+    /** 0 si aucune sauvegarde n'a ete exportee depuis cette installation. */
+    suspend fun lastExportAt(): Long = prefsStore.lastExportAt()
 
     fun suggestedFileName(): String {
         val day = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
@@ -74,6 +79,7 @@ class BackupManager(
         val stream = context.contentResolver.openOutputStream(target, "wt")
             ?: error("Impossible d'écrire dans ce fichier.")
         stream.use { it.write(sealed.toByteArray(Charsets.UTF_8)) }
+        prefsStore.setLastExportAt(System.currentTimeMillis())
 
         payload.servers.size
     }

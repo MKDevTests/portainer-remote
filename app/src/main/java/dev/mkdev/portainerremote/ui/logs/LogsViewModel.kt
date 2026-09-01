@@ -30,6 +30,12 @@ data class LogsUi(
     val tail: LogTail = LogTail.MEDIUM,
     val timestamps: Boolean = true,
     val following: Boolean = false,
+    /**
+     * Faux par defaut : une ligne repliee empeche de voir ou commence l'entree
+     * suivante. Mais une stack trace ou un JSON d'une seule ligne est illisible
+     * en defilement horizontal, d'ou la bascule.
+     */
+    val wrap: Boolean = false,
     val query: String = "",
     /** Vide veut dire « le conteneur n'a rien ecrit », ce qui n'est pas une erreur. */
     val empty: Boolean = false,
@@ -142,6 +148,8 @@ class LogsViewModel(
         _ui.update { it.copy(timestamps = !it.timestamps) }
         load()
     }
+
+    fun toggleWrap() = _ui.update { it.copy(wrap = !it.wrap) }
 
     fun setQuery(value: String) = _ui.update { it.copy(query = value) }
 

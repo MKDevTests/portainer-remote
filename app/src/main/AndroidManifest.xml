@@ -12,6 +12,12 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+        Notification de nouvelle version. Demandée à l'exécution depuis
+        Android 13 ; refusée, l'application se contente de la bannière.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".PortainerRemoteApp"
         android:allowBackup="false"

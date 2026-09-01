@@ -41,6 +41,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.mkdev.portainerremote.data.backup.BackupCrypto
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -113,6 +116,38 @@ fun BackupScreen(
                                 "par toi. Rien ne permet de la retrouver.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (ui.lastExportAt == 0L) {
+                            MaterialTheme.colorScheme.errorContainer
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                        },
+                    ),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            if (ui.lastExportAt == 0L) {
+                                "Aucune sauvegarde depuis cette installation"
+                            } else {
+                                "Dernière sauvegarde : " + SimpleDateFormat(
+                                    "d MMMM yyyy 'à' HH:mm",
+                                    Locale.FRANCE,
+                                ).format(Date(ui.lastExportAt))
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        if (ui.lastExportAt == 0L) {
+                            Text(
+                                "Une mise à jour ne perd rien. Seule une désinstallation efface " +
+                                    "la configuration, et c'est là que ce fichier sert.",
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                     }
                 }
 

@@ -28,12 +28,16 @@ android {
         applicationId = "dev.mkdev.portainerremote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.7.0"
+        versionCode = 8
+        versionName = "0.8.0"
 
         // Depot consulte pour les mises a jour. Un fork ne change que cette
         // ligne : rien d'autre dans le code ne nomme le depot.
         buildConfigField("String", "UPDATE_REPO", "\"MKDevTests/portainer-remote\"")
+
+        // Racine de l'API des releases. Separee du depot pour qu'une instance
+        // GitHub Enterprise reste atteignable sans toucher au code.
+        buildConfigField("String", "UPDATE_API", "\"https://api.github.com\"")
     }
 
     signingConfigs {

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.PortainerRepository
+import dev.mkdev.portainerremote.data.UpdateNotifier
 import dev.mkdev.portainerremote.data.WidgetSync
 import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.net.ReleaseInfo
@@ -24,6 +25,7 @@ class ServersViewModel(
     private val favoritesStore: FavoritesStore,
     private val widgetSync: WidgetSync,
     private val updateChecker: UpdateChecker,
+    private val updateNotifier: UpdateNotifier,
 ) : ViewModel() {
 
     val servers: StateFlow<List<Server>> = store.servers
@@ -38,7 +40,11 @@ class ServersViewModel(
         // Une fois par cycle de vie du ViewModel. Un echec reseau est silencieux :
         // rater une mise a jour ne merite pas un message d'erreur.
         viewModelScope.launch {
-            _update.value = (updateChecker.check() as? ApiResult.Ok)?.value
+            val release = (updateChecker.check() as? ApiResult.Ok)?.value
+            _update.value = release
+            // Une banniere ne se voit que si l'ecran est ouvert et regarde ; la
+            // notification survit a la fermeture de l'application.
+            if (release != null) updateNotifier.notifyIfNew(release)
         }
     }
 

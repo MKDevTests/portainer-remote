@@ -20,6 +20,8 @@ data class BackupUi(
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
+    /** 0 tant qu'aucune sauvegarde n'a ete exportee depuis cette installation. */
+    val lastExportAt: Long = 0L,
 ) {
     val longEnough: Boolean get() = passphrase.length >= BackupCrypto.MIN_PASSPHRASE
 
@@ -37,6 +39,12 @@ class BackupViewModel(
     private val _ui = MutableStateFlow(BackupUi())
     val ui: StateFlow<BackupUi> = _ui.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            _ui.update { it.copy(lastExportAt = manager.lastExportAt()) }
+        }
+    }
+
     fun suggestedFileName(): String = manager.suggestedFileName()
 
     fun setPassphrase(value: String) = _ui.update { it.copy(passphrase = value) }
@@ -52,6 +60,7 @@ class BackupViewModel(
                 _ui.update {
                     it.copy(
                         busy = false,
+                        lastExportAt = manager.lastExportAt(),
                         message = "$count serveur${if (count > 1) "s" else ""} sauvegardé" +
                             "${if (count > 1) "s" else ""}.",
                     )

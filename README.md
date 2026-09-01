@@ -26,6 +26,7 @@ en géométrie téléphone et en géométrie tablette.
 | Mise en page téléphone et tablette | fait |
 | Widget et tuile Quick Settings | fait |
 | Mise à jour depuis l'app (téléchargement et installation) | fait |
+| Notification et vérification quotidienne des releases | fait |
 | Sauvegarde chiffrée export / import | fait |
 | Consultation des logs des conteneurs | fait |
 
@@ -34,11 +35,18 @@ en géométrie téléphone et en géométrie tablette.
 L'écran **Mises à jour**, accessible depuis la barre de l'écran des serveurs,
 affiche la version installée, vérifie à la demande la dernière release du dépôt
 nommé par `UPDATE_REPO` dans `app/build.gradle.kts`, télécharge l'APK et le
-passe à l'installateur d'Android. Une bannière apparaît aussi d'elle-même sur
-l'écran des serveurs quand une version plus récente existe.
+passe à l'installateur d'Android.
 
-Un fork ne change que la ligne `UPDATE_REPO` : rien d'autre dans le code ne
-nomme le dépôt.
+Trois signaux, du plus discret au plus insistant : une **pastille** sur l'icône
+de la barre, une **bannière** sur l'écran des serveurs, et une **notification**
+Android. La vérification a lieu à l'ouverture de l'application et **une fois par
+jour** via WorkManager, donc même sans l'ouvrir. Une même version n'est notifiée
+qu'une fois : sans cette mémoire, la vérification quotidienne reposterait la
+même notification chaque jour, ce qui apprend à l'ignorer.
+
+Un fork ne change que `UPDATE_REPO` : rien d'autre dans le code ne nomme le
+dépôt. `UPDATE_API` pointe la racine de l'API, pour qu'une instance GitHub
+Enterprise reste atteignable sans toucher au code.
 
 Trois garde-fous, parce que `REQUEST_INSTALL_PACKAGES` n'est pas une permission
 anodine pour une application de pilotage d'infrastructure :
@@ -65,8 +73,11 @@ route Docker sait diffuser en continu, mais une connexion maintenue ouverte à
 travers un VPN mobile se coupe sans prévenir. Moins élégant, nettement plus
 prévisible.
 
-Les lignes ne se replient pas, elles défilent horizontalement : un retour à la
-ligne forcé rendrait impossible de voir où commence l'entrée suivante.
+Les lignes défilent horizontalement par défaut : un retour à la ligne forcé
+rendrait impossible de voir où commence l'entrée suivante. Mais une stack trace
+ou un JSON d'une seule ligne est illisible ainsi, d'où la bascule **Retour à la
+ligne**, qui replie les lignes et s'appuie sur l'alternance de teinte pour
+rendre la frontière entre entrées.
 
 ### Sauvegarde
 

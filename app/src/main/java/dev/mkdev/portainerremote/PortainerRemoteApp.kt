@@ -8,7 +8,10 @@ import dev.mkdev.portainerremote.data.PortainerRepository
 import dev.mkdev.portainerremote.data.backup.BackupManager
 import dev.mkdev.portainerremote.data.UpdateManager
 import dev.mkdev.portainerremote.data.WidgetSync
+import dev.mkdev.portainerremote.data.UpdateCheckWorker
+import dev.mkdev.portainerremote.data.UpdateNotifier
 import dev.mkdev.portainerremote.data.store.FavoritesStore
+import dev.mkdev.portainerremote.data.store.PrefsStore
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.data.net.UpdateChecker
 
@@ -21,7 +24,9 @@ class AppContainer(context: Context) {
     val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository)
     val updateChecker = UpdateChecker()
     val updateManager = UpdateManager(appContext)
-    val backupManager = BackupManager(appContext, serverStore, favoritesStore)
+    val prefsStore = PrefsStore(appContext)
+    val backupManager = BackupManager(appContext, serverStore, favoritesStore, prefsStore)
+    val updateNotifier = UpdateNotifier(appContext, prefsStore)
 }
 
 class PortainerRemoteApp : Application() {
@@ -31,6 +36,9 @@ class PortainerRemoteApp : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Verification quotidienne en tache de fond, independante de l'ouverture
+        // de l'application.
+        UpdateCheckWorker.schedule(this)
     }
 }
 

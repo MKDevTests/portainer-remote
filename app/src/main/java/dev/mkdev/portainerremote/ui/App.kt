@@ -1,6 +1,7 @@
 package dev.mkdev.portainerremote.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
@@ -35,7 +36,7 @@ private const val ROUTE_BACKUP = "backup"
 private const val ROUTE_LOGS = "logs/{serverId}/{envId}/{containerId}/{name}"
 
 @Composable
-fun App() {
+fun App(openUpdatesAtStart: Boolean = false) {
     val navController = rememberNavController()
     val container = rememberAppContainer()
 
@@ -47,8 +48,16 @@ fun App() {
                 container.favoritesStore,
                 container.widgetSync,
                 container.updateChecker,
+                container.updateNotifier,
             )
         }
+    }
+
+    // La notification ouvre l'ecran des mises a jour, mais par-dessus la liste
+    // des serveurs : le retour arriere doit ramener a l'application, pas la
+    // fermer.
+    LaunchedEffect(openUpdatesAtStart) {
+        if (openUpdatesAtStart) navController.navigate(ROUTE_UPDATES)
     }
 
     NavHost(navController = navController, startDestination = ROUTE_SERVERS) {
