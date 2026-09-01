@@ -7,6 +7,7 @@ import dev.mkdev.portainerremote.data.model.DockerContainer
 import dev.mkdev.portainerremote.data.model.PortainerEndpoint
 import dev.mkdev.portainerremote.data.model.PortainerStack
 import dev.mkdev.portainerremote.data.model.StackUpdatePayload
+import dev.mkdev.portainerremote.data.net.DockerLogStream
 import dev.mkdev.portainerremote.data.net.PortainerClient
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.domain.ContainerView
@@ -228,6 +229,31 @@ class PortainerRepository(private val store: ServerStore) {
     suspend fun deleteImage(server: Server, envId: Int, imageId: String): ApiResult<Int> {
         val client = clientFor(server) ?: return ApiResult.NetworkError("Secret illisible.")
         return client.deleteImage(envId, imageId)
+    }
+
+    // --------------------------------------------------------------------- logs
+
+    /**
+     * Logs d'un conteneur, deja demultiplexes.
+     *
+     * Docker renvoie un flux d'octets ou chaque trame porte un entete binaire de
+     * 8 octets ; sans [DockerLogStream], chaque ligne s'afficherait prefixee de
+     * caracteres parasites.
+     */
+    suspend fun logs(
+        server: Server,
+        envId: Int,
+        containerId: String,
+        tail: Int,
+        timestamps: Boolean,
+    ): ApiResult<String> {
+        val client = clientFor(server) ?: return ApiResult.NetworkError("Secret illisible.")
+        return when (val result = client.logs(envId, containerId, tail, timestamps)) {
+            is ApiResult.Ok -> ApiResult.Ok(DockerLogStream.decode(result.value))
+            is ApiResult.HttpError -> ApiResult.HttpError(result.code)
+            is ApiResult.NetworkError -> ApiResult.NetworkError(result.reason)
+            ApiResult.Unsupported -> ApiResult.Unsupported
+        }
     }
 
     // ------------------------------------------------------------------ actions

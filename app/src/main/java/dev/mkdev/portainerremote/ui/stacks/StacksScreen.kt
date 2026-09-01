@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
@@ -90,6 +91,7 @@ fun StacksScreen(
     viewModel: StacksViewModel,
     onBack: () -> Unit,
     onOpenImages: () -> Unit,
+    onOpenLogs: (envId: Int, containerId: String, name: String) -> Unit,
 ) {
     val ui by viewModel.ui.collectAsState()
     val snackbar = remember { SnackbarHostState() }
@@ -246,6 +248,9 @@ fun StacksScreen(
                             onAction = { entry, action ->
                                 viewModel.actOnContainer(entry.stack, entry.container, action)
                             },
+                            onOpenLogs = { entry ->
+                                onOpenLogs(entry.envId, entry.container.id, entry.container.name)
+                            },
                         )
                         return@Column
                     }
@@ -295,6 +300,9 @@ fun StacksScreen(
                                     onContainerAction = { container, action ->
                                         viewModel.actOnContainer(stack, container, action)
                                     },
+                                    onOpenLogs = { container ->
+                                        onOpenLogs(stack.envId, container.id, container.name)
+                                    },
                                 )
                             }
 
@@ -331,6 +339,7 @@ private fun ContainersGrid(
     columns: Int,
     busy: Set<String>,
     onAction: (ContainerEntry, StackAction) -> Unit,
+    onOpenLogs: (ContainerEntry) -> Unit,
 ) {
     if (entries.isEmpty()) {
         Text(
@@ -354,6 +363,7 @@ private fun ContainersGrid(
                 entry = entry,
                 busy = entry.container.id in busy,
                 onAction = { action -> onAction(entry, action) },
+                onOpenLogs = { onOpenLogs(entry) },
             )
         }
     }
@@ -364,6 +374,7 @@ private fun ContainerCard(
     entry: ContainerEntry,
     busy: Boolean,
     onAction: (StackAction) -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     val container = entry.container
 
@@ -416,6 +427,10 @@ private fun ContainerCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                }
+
+                IconButton(onClick = onOpenLogs) {
+                    Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
                 }
 
                 if (busy) {
@@ -530,6 +545,7 @@ private fun StackCard(
     onToggleFavorite: () -> Unit,
     onAction: (StackAction) -> Unit,
     onContainerAction: (ContainerView, StackAction) -> Unit,
+    onOpenLogs: (ContainerView) -> Unit,
 ) {
     val working = stack.key in busy
     var menuOpen by remember { mutableStateOf(false) }
@@ -667,6 +683,7 @@ private fun StackCard(
                         container = container,
                         busy = container.id in busy,
                         onAction = { action -> onContainerAction(container, action) },
+                        onOpenLogs = { onOpenLogs(container) },
                     )
                 }
             }
@@ -679,6 +696,7 @@ private fun ContainerRow(
     container: ContainerView,
     busy: Boolean,
     onAction: (StackAction) -> Unit,
+    onOpenLogs: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -698,6 +716,10 @@ private fun ContainerRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        IconButton(onClick = onOpenLogs) {
+            Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
         }
 
         if (busy) {

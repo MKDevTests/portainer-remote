@@ -10,8 +10,8 @@ son auteur.
 
 ## État
 
-Utilisable. Tout est testé sur un appareil réel, en géométrie téléphone et en
-géométrie tablette. Seul l'écran de logs reste à faire.
+Utilisable et complet pour l'usage visé. Tout est testé sur un appareil réel,
+en géométrie téléphone et en géométrie tablette.
 
 | Fonctionnalité | État |
 | --- | --- |
@@ -27,7 +27,7 @@ géométrie tablette. Seul l'écran de logs reste à faire.
 | Widget et tuile Quick Settings | fait |
 | Mise à jour depuis l'app (téléchargement et installation) | fait |
 | Sauvegarde chiffrée export / import | fait |
-| Consultation des logs | démultiplexeur écrit, écran à faire |
+| Consultation des logs des conteneurs | fait |
 
 ### Mises à jour
 
@@ -53,6 +53,20 @@ anodine pour une application de pilotage d'infrastructure :
 
 L'APK est déposé dans le cache, dans le seul dossier exposé par le
 `FileProvider`, et le dossier est vidé avant chaque téléchargement.
+
+### Logs
+
+Chaque conteneur a un bouton de logs, dans l'onglet Conteneurs comme sous un
+stack déplié. L'écran propose 100, 500 ou 2000 lignes, l'horodatage à la
+demande, un filtre de lignes, la copie du texte affiché, et un suivi en direct.
+
+Le suivi procède par **sondage toutes les trois secondes**, pas par flux : la
+route Docker sait diffuser en continu, mais une connexion maintenue ouverte à
+travers un VPN mobile se coupe sans prévenir. Moins élégant, nettement plus
+prévisible.
+
+Les lignes ne se replient pas, elles défilent horizontalement : un retour à la
+ligne forcé rendrait impossible de voir où commence l'entrée suivante.
 
 ### Sauvegarde
 

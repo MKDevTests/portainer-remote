@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import android.net.Uri
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -14,6 +15,8 @@ import dev.mkdev.portainerremote.ui.backup.BackupScreen
 import dev.mkdev.portainerremote.ui.backup.BackupViewModel
 import dev.mkdev.portainerremote.ui.images.ImagesScreen
 import dev.mkdev.portainerremote.ui.images.ImagesViewModel
+import dev.mkdev.portainerremote.ui.logs.LogsScreen
+import dev.mkdev.portainerremote.ui.logs.LogsViewModel
 import dev.mkdev.portainerremote.ui.servers.ServerEditScreen
 import dev.mkdev.portainerremote.ui.servers.ServersScreen
 import dev.mkdev.portainerremote.ui.servers.ServersViewModel
@@ -29,6 +32,7 @@ private const val ROUTE_STACKS = "stacks/{serverId}"
 private const val ROUTE_IMAGES = "images/{serverId}"
 private const val ROUTE_UPDATES = "updates"
 private const val ROUTE_BACKUP = "backup"
+private const val ROUTE_LOGS = "logs/{serverId}/{envId}/{containerId}/{name}"
 
 @Composable
 fun App() {
@@ -103,6 +107,45 @@ fun App() {
                 ),
                 onBack = { navController.popBackStack() },
                 onOpenImages = { navController.navigate("images/$serverId") },
+                onOpenLogs = { envId, containerId, name ->
+                    // Un nom de conteneur peut contenir des caracteres a echapper.
+                    val safeName = Uri.encode(name)
+                    navController.navigate("logs/$serverId/$envId/$containerId/$safeName")
+                },
+            )
+        }
+
+        composable(
+            route = ROUTE_LOGS,
+            arguments = listOf(
+                navArgument("serverId") { type = NavType.StringType },
+                navArgument("envId") { type = NavType.IntType },
+                navArgument("containerId") { type = NavType.StringType },
+                navArgument("name") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val serverId = entry.arguments?.getString("serverId").orEmpty()
+            val envId = entry.arguments?.getInt("envId") ?: 0
+            val containerId = entry.arguments?.getString("containerId").orEmpty()
+            val name = entry.arguments?.getString("name").orEmpty()
+
+            LogsScreen(
+                viewModel = viewModel(
+                    key = "logs-$containerId",
+                    factory = viewModelFactory {
+                        initializer {
+                            LogsViewModel(
+                                serverId,
+                                envId,
+                                containerId,
+                                name,
+                                container.serverStore,
+                                container.repository,
+                            )
+                        }
+                    },
+                ),
+                onBack = { navController.popBackStack() },
             )
         }
 

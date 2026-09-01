@@ -174,11 +174,16 @@ class PortainerClient(
             .decode<List<DockerContainer>>()
     }
 
-    suspend fun logs(envId: Int, containerId: String, tail: Int = 200): ApiResult<ByteArray> = guard {
+    suspend fun logs(
+        envId: Int,
+        containerId: String,
+        tail: Int = 200,
+        timestamps: Boolean = true,
+    ): ApiResult<ByteArray> = guard {
         val response = send(
             HttpMethod.Get,
             "/api/endpoints/$envId/docker/containers/$containerId/logs" +
-                "?stdout=1&stderr=1&timestamps=1&tail=$tail",
+                "?stdout=1&stderr=1&timestamps=${if (timestamps) 1 else 0}&tail=$tail",
         )
         when {
             response.status.isSuccess() -> ApiResult.Ok(response.body<ByteArray>())
