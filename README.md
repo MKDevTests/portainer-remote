@@ -29,6 +29,7 @@ en géométrie téléphone et en géométrie tablette.
 | Notification et vérification quotidienne des releases | fait |
 | Sauvegarde chiffrée export / import | fait |
 | Consultation des logs des conteneurs | fait |
+| Ports publiés et raccourci vers l'interface web | fait |
 
 ### Mises à jour
 
@@ -61,6 +62,46 @@ anodine pour une application de pilotage d'infrastructure :
 
 L'APK est déposé dans le cache, dans le seul dossier exposé par le
 `FileProvider`, et le dossier est vidé avant chaque téléchargement.
+
+### Ports et accès aux services
+
+Chaque conteneur affiche ses ports publiés, et chaque stack affiche ceux de
+tous ses conteneurs. Une pastille mène au service. Seul le port de l'hôte est
+écrit : c'est lui qui suffit à s'y rendre.
+
+Rien de tout cela ne coûte un appel de plus. `Ports` et `HostConfig` arrivent
+déjà dans la réponse que l'application télécharge pour lister les conteneurs ;
+elle les jetait.
+
+Quatre décisions viennent de la mesure sur une instance réelle :
+
+- **Déduplication.** 46 des 96 entrées `Ports` étaient la même liaison rapportée
+  deux fois, en IPv4 puis en IPv6. Sans dédoublonnage, chaque port s'afficherait
+  en double.
+- **Pas de lien en UDP ni sur la boucle locale.** Un port UDP ne porte pas de
+  HTTP ; un port lié à `127.0.0.1` est joignable par l'hôte et par lui seul. Les
+  deux gardent leur pastille et perdent leur lien, plutôt que d'en offrir un mort.
+- **Le mode réseau explique les conteneurs muets.** Sur 26 conteneurs sans port,
+  7 sont en réseau `host` — Docker ne rapporte alors rien, pas même un port privé,
+  et le compose n'en déclare pas davantage — et 8 partagent la pile d'un autre
+  conteneur. L'application le dit au lieu de laisser un blanc qui ressemble à un
+  bug. Un conteneur en réseau partagé ne recopie pas les ports de sa cible :
+  elle en publie parfois vingt, et rien ne dit lequel lui appartient.
+- **Plafond d'affichage.** Un conteneur mesuré publie 24 ports, la moyenne est
+  de 1. Au-delà de quatre pastilles, le reste se déplie à la demande.
+
+L'hôte visé par le lien n'est pas deviné, parce que **Portainer et Docker ne
+tournent pas forcément sur la même machine** : un port publié appartient à
+celle qui héberge le démon. Trois sources répondent, dans cet ordre — le
+`PublicURL` de l'environnement quand l'administrateur l'a rempli, l'adresse du
+démon quand elle est en `tcp://`, et à défaut l'hôte du Portainer configuré.
+Une liaison sur une adresse précise plutôt que sur toutes les interfaces prime
+sur les trois : elle seule répond.
+
+Le protocole, lui, est deviné : `https` sur 443, 8443 et 9443, `http` ailleurs.
+La liste est courte à dessein — deviner `https` à tort donne une erreur de
+certificat illisible, deviner `http` à tort donne une redirection que le
+navigateur suit tout seul.
 
 ### Logs
 

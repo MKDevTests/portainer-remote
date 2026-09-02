@@ -2,8 +2,10 @@ package dev.mkdev.portainerremote.data
 
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.valueOr
+import dev.mkdev.portainerremote.core.WebUi
 import dev.mkdev.portainerremote.core.valueOrNull
 import dev.mkdev.portainerremote.data.model.DockerContainer
+import dev.mkdev.portainerremote.data.model.DockerPort
 import dev.mkdev.portainerremote.data.model.PortainerEndpoint
 import dev.mkdev.portainerremote.data.model.PortainerStack
 import dev.mkdev.portainerremote.data.model.StackUpdatePayload
@@ -14,6 +16,8 @@ import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
 import dev.mkdev.portainerremote.domain.ImageGroup
 import dev.mkdev.portainerremote.domain.ImageView
+import dev.mkdev.portainerremote.domain.NetworkKind
+import dev.mkdev.portainerremote.domain.PortBinding
 import dev.mkdev.portainerremote.domain.Outcome
 import dev.mkdev.portainerremote.domain.RunState
 import dev.mkdev.portainerremote.domain.Server
@@ -26,6 +30,8 @@ import kotlinx.coroutines.sync.withLock
 
 private const val LABEL_COMPOSE = "com.docker.compose.project"
 private const val LABEL_SWARM = "com.docker.stack.namespace"
+private const val NETWORK_HOST = "host"
+private const val NETWORK_SHARED = "container:"
 
 /**
  * Fusionne les deux sources de stacks et applique les actions.
@@ -103,6 +109,7 @@ class PortainerRepository(private val store: ServerStore) {
                             kindLabel = env.kindLabel,
                             dockerCapable = true,
                             stacks = merge(env, managed.filter { it.endpointId == env.id }, containers),
+                            linkHost = WebUi.resolveHost(server.baseUrl, env.publicUrl, env.url),
                         )
                     }
                 }
@@ -120,6 +127,10 @@ class PortainerRepository(private val store: ServerStore) {
         managed: List<PortainerStack>,
         containers: List<DockerContainer>,
     ): List<StackView> {
+        // Index par identifiant : un conteneur en reseau partage designe sa
+        // cible par son id, et c'est elle qui porte les ports.
+        val byId = containers.associateBy { it.id }
+
         val byProject = containers
             .groupBy { it.labels[LABEL_COMPOSE] ?: it.labels[LABEL_SWARM] }
             .toMutableMap()
@@ -138,7 +149,7 @@ class PortainerRepository(private val store: ServerStore) {
                 origin = StackOrigin.MANAGED,
                 managedId = stack.id,
                 managedStatus = stack.status,
-                containers = own.map { it.toView() },
+                containers = own.map { it.toView(byId) },
             )
         }
 
@@ -152,7 +163,7 @@ class PortainerRepository(private val store: ServerStore) {
                 envId = env.id,
                 envName = env.name,
                 origin = if (swarm) StackOrigin.SWARM else StackOrigin.COMPOSE,
-                containers = group.map { it.toView() },
+                containers = group.map { it.toView(byId) },
             )
         }
 
@@ -164,20 +175,52 @@ class PortainerRepository(private val store: ServerStore) {
                 envId = env.id,
                 envName = env.name,
                 origin = StackOrigin.LOOSE,
-                containers = loose.map { it.toView() },
+                containers = loose.map { it.toView(byId) },
             )
         }
 
         return out.sortedWith(compareBy({ it.origin.ordinal }, { it.name.lowercase() }))
     }
 
-    private fun DockerContainer.toView() = ContainerView(
-        id = id,
-        name = displayName,
-        image = image,
-        state = state,
-        statusText = status,
-    )
+    private fun DockerContainer.toView(byId: Map<String, DockerContainer>): ContainerView {
+        val mode = hostConfig.networkMode
+        val sharedId = if (mode.startsWith(NETWORK_SHARED)) mode.removePrefix(NETWORK_SHARED) else null
+
+        return ContainerView(
+            id = id,
+            name = displayName,
+            image = image,
+            state = state,
+            statusText = status,
+            // Un conteneur en reseau partage ne recopie pas les ports de sa
+            // cible : elle en publie parfois vingt, et rien ne dit lequel lui
+            // appartient. Le dire est juste ; le deviner ne le serait pas.
+            ports = if (sharedId != null) emptyList() else ports.toBindings(),
+            network = when {
+                mode.equals(NETWORK_HOST, ignoreCase = true) -> NetworkKind.HOST
+                sharedId != null -> NetworkKind.SHARED
+                else -> NetworkKind.NORMAL
+            },
+            sharesNetworkWith = sharedId?.let { byId[it]?.displayName },
+        )
+    }
+
+    /**
+     * Mesure : 46 des 96 entrees d'une instance reelle etaient des doublons,
+     * la meme liaison rapportee en IPv4 puis en IPv6. Sans deduplication,
+     * chaque port s'afficherait deux fois.
+     *
+     * Une entree sans port public est ecartee : elle decrit un port ouvert dans
+     * le reseau de Docker, que rien n'atteint depuis le telephone.
+     */
+    private fun List<DockerPort>.toBindings(): List<PortBinding> = this
+        .filter { it.publicPort > 0 }
+        .map { PortBinding(it.publicPort, it.privatePort, it.type, it.ip) }
+        // Tri stable : entre deux doublons, celui qui n'est pas sur la boucle
+        // locale l'emporte, car lui seul est joignable.
+        .sortedBy { if (it.loopback) 1 else 0 }
+        .distinctBy { it.publicPort to it.type }
+        .sortedBy { it.publicPort }
 
     // ------------------------------------------------------------------- images
 

@@ -37,12 +37,71 @@ enum class StackOrigin {
 
 enum class RunState { RUNNING, PARTIAL, STOPPED, UNKNOWN }
 
+/**
+ * Un port publie sur l'hote, deduplique.
+ *
+ * Docker rapporte la meme liaison deux fois quand elle couvre IPv4 et IPv6 :
+ * 46 des 96 entrees mesurees sur une instance reelle etaient des doublons. La
+ * deduplication a lieu avant d'arriver ici.
+ */
+data class PortBinding(
+    val publicPort: Int,
+    val privatePort: Int,
+    val type: String,
+    /** Interface d'ecoute cote hote. 0.0.0.0 et :: valent "toutes". */
+    val bindIp: String,
+) {
+    val udp: Boolean get() = type.equals("udp", ignoreCase = true)
+
+    /**
+     * Lie a la boucle locale de l'hote. Le service tourne, l'hote le joint, le
+     * telephone jamais : afficher un lien serait mentir.
+     */
+    val loopback: Boolean get() = bindIp == "127.0.0.1" || bindIp == "::1"
+
+    /** Un lien n'a de sens qu'en TCP, et seulement si quelque chose peut l'atteindre. */
+    val linkable: Boolean get() = !udp && !loopback
+
+    /**
+     * Quand la liaison ne vise pas toutes les interfaces, l'adresse ecoutee est
+     * la seule qui reponde : elle prime alors sur l'hote de l'environnement.
+     */
+    val boundHost: String?
+        get() = bindIp.takeIf {
+            it.isNotBlank() && it != "0.0.0.0" && it != "::" && !loopback
+        }
+
+    /** Compact, choix de l'utilisateur : le port hote suffit a s'y rendre. */
+    val label: String get() = publicPort.toString()
+}
+
+/** Ce que le mode reseau explique quand aucun port n'apparait. */
+enum class NetworkKind {
+    /** Cas ordinaire : ce que la liste des ports dit fait foi. */
+    NORMAL,
+
+    /**
+     * Le conteneur ecoute directement sur les interfaces de l'hote. Mesure :
+     * Docker ne rapporte alors aucun port, pas meme un port prive. L'API ne
+     * sait rien, et le compose non plus - un service en reseau host ne declare
+     * pas de ports.
+     */
+    HOST,
+
+    /** Le conteneur partage la pile reseau d'un autre : les ports sont les siens. */
+    SHARED,
+}
+
 data class ContainerView(
     val id: String,
     val name: String,
     val image: String,
     val state: String,
     val statusText: String,
+    val ports: List<PortBinding> = emptyList(),
+    val network: NetworkKind = NetworkKind.NORMAL,
+    /** Nom du conteneur dont la pile reseau est partagee, si elle est retrouvable. */
+    val sharesNetworkWith: String? = null,
 ) {
     val running: Boolean get() = state.equals("running", ignoreCase = true)
 }
@@ -75,6 +134,16 @@ data class StackView(
 
     val runningCount: Int get() = containers.count { it.running }
 
+    /**
+     * Tous les ports du stack, sans doublon. Deux conteneurs peuvent rapporter
+     * le meme port quand l'un partage la pile reseau de l'autre.
+     */
+    val ports: List<PortBinding>
+        get() = containers
+            .flatMap { it.ports }
+            .distinctBy { it.publicPort to it.type }
+            .sortedBy { it.publicPort }
+
     /** Un stack sans conteneur ni route native ne peut pas etre demarre. */
     val actionable: Boolean get() = managedId != null || containers.isNotEmpty()
 }
@@ -85,6 +154,13 @@ data class EnvGroup(
     val kindLabel: String,
     val dockerCapable: Boolean,
     val stacks: List<StackView>,
+    /**
+     * Hote a viser pour joindre un port publie de cet environnement. Resolu au
+     * chargement, parce que Portainer et Docker ne tournent pas forcement sur
+     * la meme machine. Vide si rien de fiable n'a pu etre deduit : on affiche
+     * alors les ports sans lien.
+     */
+    val linkHost: String = "",
 )
 
 /** Nomme StackAction et non Intent, pour ne pas entrer en collision avec android.content.Intent. */

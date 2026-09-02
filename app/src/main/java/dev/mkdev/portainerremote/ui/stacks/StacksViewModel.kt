@@ -42,6 +42,8 @@ data class ContainerEntry(
     val envName: String,
     val stack: StackView,
     val container: ContainerView,
+    /** Hote a viser pour joindre les ports publies de cet environnement. */
+    val linkHost: String = "",
 )
 
 data class StacksUi(
@@ -116,7 +118,9 @@ data class StacksUi(
             return groups
                 .flatMap { group ->
                     group.stacks.flatMap { stack ->
-                        stack.containers.map { ContainerEntry(group.envId, group.envName, stack, it) }
+                        stack.containers.map {
+                            ContainerEntry(group.envId, group.envName, stack, it, group.linkHost)
+                        }
                     }
                 }
                 .filter { entry ->

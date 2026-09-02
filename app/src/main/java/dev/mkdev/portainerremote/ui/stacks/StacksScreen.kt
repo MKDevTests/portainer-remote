@@ -289,6 +289,7 @@ fun StacksScreen(
                             items(group.stacks, key = { it.key }) { stack ->
                                 StackCard(
                                     stack = stack,
+                                    linkHost = group.linkHost,
                                     busy = ui.busy,
                                     favorite = stack.key in ui.favorites,
                                     expanded = expanded[stack.key] == true,
@@ -406,6 +407,13 @@ private fun ContainerCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 4.dp),
+            )
+
+            PortRow(
+                ports = container.ports,
+                linkHost = entry.linkHost,
+                network = container.network,
+                sharesNetworkWith = container.sharesNetworkWith,
             )
 
             Row(
@@ -538,6 +546,7 @@ private fun EnvHeader(group: EnvGroup) {
 @Composable
 private fun StackCard(
     stack: StackView,
+    linkHost: String,
     busy: Set<String>,
     favorite: Boolean,
     expanded: Boolean,
@@ -669,6 +678,10 @@ private fun StackCard(
                 }
             }
 
+            // Tous les ports du stack, dedupliques : la question posee a ce
+            // niveau est « par ou j'y accede », pas « quel conteneur les porte ».
+            PortRow(ports = stack.ports, linkHost = linkHost)
+
             if (stack.origin == StackOrigin.MANAGED && stack.containers.isEmpty()) {
                 Text(
                     "Stack arrêté : ses conteneurs ne sont plus listés.",
@@ -681,6 +694,7 @@ private fun StackCard(
                 stack.containers.forEach { container ->
                     ContainerRow(
                         container = container,
+                        linkHost = linkHost,
                         busy = container.id in busy,
                         onAction = { action -> onContainerAction(container, action) },
                         onOpenLogs = { onOpenLogs(container) },
@@ -694,6 +708,7 @@ private fun StackCard(
 @Composable
 private fun ContainerRow(
     container: ContainerView,
+    linkHost: String,
     busy: Boolean,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
@@ -715,6 +730,12 @@ private fun ContainerRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+            PortRow(
+                ports = container.ports,
+                linkHost = linkHost,
+                network = container.network,
+                sharesNetworkWith = container.sharesNetworkWith,
             )
         }
 
