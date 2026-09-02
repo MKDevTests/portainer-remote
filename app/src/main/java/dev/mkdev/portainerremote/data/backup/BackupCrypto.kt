@@ -68,6 +68,10 @@ data class BackupPayload(
      * ecrite avant l'apparition du reglage doit rester importable.
      */
     val pinnedPorts: Map<String, Int> = emptyMap(),
+    /** Conteneurs favoris, par clef serveur|environnement|nom. */
+    val favoriteContainers: List<String> = emptyList(),
+    /** Mode d'affichage de l'onglet Favoris. Vide : laisser le defaut. */
+    val favoritesView: String = "",
 )
 
 class WrongPassphraseException : Exception("Phrase de passe incorrecte, ou fichier abîmé.")

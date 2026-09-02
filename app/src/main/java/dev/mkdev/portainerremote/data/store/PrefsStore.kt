@@ -23,6 +23,19 @@ private val Context.prefsDataStore by preferencesDataStore(name = "portainer_pre
 fun portPinKey(serverId: String, envId: Int, containerName: String): String =
     "$serverId|$envId|$containerName"
 
+/**
+ * Le nom du conteneur tel qu'il est inscrit dans une clef.
+ *
+ * Sert aux favoris dont le conteneur a disparu : sans lui, un favori devenu
+ * introuvable n'aurait plus rien a afficher, donc plus rien a cliquer pour
+ * etre retire.
+ */
+fun containerNameOfKey(key: String): String = key.split('|', limit = 3).getOrElse(2) { key }
+
+fun envIdOfKey(key: String): Int = key.split('|', limit = 3).getOrNull(1)?.toIntOrNull() ?: 0
+
+fun serverIdOfKey(key: String): String = key.substringBefore('|')
+
 /** Petits reglages qui n'appartiennent ni aux serveurs ni aux favoris. */
 class PrefsStore(context: Context) {
 
@@ -30,6 +43,8 @@ class PrefsStore(context: Context) {
     private val notifiedVersionKey = stringPreferencesKey("notified_version")
     private val lastExportKey = longPreferencesKey("last_export_at")
     private val pinnedPortsKey = stringPreferencesKey("pinned_ports_json")
+    private val favoriteContainersKey = stringPreferencesKey("favorite_containers_json")
+    private val favoritesViewKey = stringPreferencesKey("favorites_view")
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -73,6 +88,53 @@ class PrefsStore(context: Context) {
             prefs[pinnedPortsKey] = json.encodeToString(merged)
         }
     }
+
+    /**
+     * Conteneurs mis en favori, par clef.
+     *
+     * Deliberement ici et non dans FavoritesStore : ce dernier alimente le
+     * widget, la tuile et StackActionWorker, qui retrouvent tous un favori par
+     * son stackKey. Un conteneur range la-bas n'aurait aucun stack correspondant
+     * et casserait le widget sans bruit.
+     */
+    val favoriteContainers: Flow<Set<String>> =
+        appContext.prefsDataStore.data.map { decodeKeys(it[favoriteContainersKey]) }
+
+    suspend fun currentFavoriteContainers(): Set<String> =
+        decodeKeys(appContext.prefsDataStore.data.first()[favoriteContainersKey])
+
+    /** @return vrai si le conteneur est desormais favori. */
+    suspend fun toggleFavoriteContainer(key: String): Boolean {
+        var nowFavorite = false
+        appContext.prefsDataStore.edit { prefs ->
+            val keys = decodeKeys(prefs[favoriteContainersKey]).toMutableSet()
+            nowFavorite = keys.add(key)
+            if (!nowFavorite) keys.remove(key)
+            prefs[favoriteContainersKey] = json.encodeToString(keys.toList())
+        }
+        return nowFavorite
+    }
+
+    /** Fusionne sans rien retirer, pour la restauration d'une sauvegarde. */
+    suspend fun addFavoriteContainers(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        appContext.prefsDataStore.edit { prefs ->
+            val merged = decodeKeys(prefs[favoriteContainersKey]) + keys
+            prefs[favoriteContainersKey] = json.encodeToString(merged.toList())
+        }
+    }
+
+    /** Vide tant que rien n'a ete choisi : l'appelant decide du defaut. */
+    suspend fun favoritesView(): String =
+        appContext.prefsDataStore.data.first()[favoritesViewKey].orEmpty()
+
+    suspend fun setFavoritesView(mode: String) {
+        appContext.prefsDataStore.edit { it[favoritesViewKey] = mode }
+    }
+
+    private fun decodeKeys(raw: String?): Set<String> =
+        if (raw.isNullOrBlank()) emptySet()
+        else runCatching { json.decodeFromString<List<String>>(raw).toSet() }.getOrDefault(emptySet())
 
     private fun decodePins(raw: String?): Map<String, Int> =
         if (raw.isNullOrBlank()) emptyMap()

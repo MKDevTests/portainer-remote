@@ -22,6 +22,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
@@ -108,6 +110,9 @@ fun StacksScreen(
     // un redeploiement change l'identifiant et garde le nom.
     val pinnedOf: (Int, String) -> Set<Int> = { envId, name ->
         ui.pinnedPorts[portPinKey(serverId, envId, name)]?.let { setOf(it) }.orEmpty()
+    }
+    val isFavorite: (Int, String) -> Boolean = { envId, name ->
+        portPinKey(serverId, envId, name) in ui.favoriteContainers
     }
 
     pinTarget?.let { target ->
@@ -215,6 +220,7 @@ fun StacksScreen(
                                         StacksTab.STACKS ->
                                             ui.visibleGroups.sumOf { it.stacks.size }
                                         StacksTab.CONTAINERS -> ui.visibleContainers.size
+                                        StacksTab.FAVORITES -> ui.visibleFavorites.size
                                     }
                                     Text("${entry.label} · $count")
                                 },
@@ -263,12 +269,40 @@ fun StacksScreen(
                         return@Column
                     }
 
+                    if (ui.tab == StacksTab.FAVORITES) {
+                        FavoritesBody(
+                            favorites = ui.visibleFavorites,
+                            view = ui.favoritesView,
+                            columns = columns,
+                            busy = ui.busy,
+                            pinnedOf = pinnedOf,
+                            isFavorite = isFavorite,
+                            onView = viewModel::setFavoritesView,
+                            onRemove = viewModel::removeFavoriteContainer,
+                            onPin = { envId, container -> pinTarget = PinTarget(envId, container) },
+                            onToggleFavorite = { envId, name ->
+                                viewModel.toggleFavoriteContainer(envId, name)
+                            },
+                            onAction = { entry, action ->
+                                viewModel.actOnContainer(entry.stack, entry.container, action)
+                            },
+                            onOpenLogs = { entry ->
+                                onOpenLogs(entry.envId, entry.container.id, entry.container.name)
+                            },
+                        )
+                        return@Column
+                    }
+
                     if (ui.tab == StacksTab.CONTAINERS) {
                         ContainersGrid(
                             entries = ui.visibleContainers,
                             columns = columns,
                             busy = ui.busy,
                             pinnedOf = pinnedOf,
+                            isFavorite = isFavorite,
+                            onToggleFavorite = { envId, name ->
+                                viewModel.toggleFavoriteContainer(envId, name)
+                            },
                             onPin = { entry ->
                                 pinTarget = PinTarget(entry.envId, entry.container)
                             },
@@ -319,6 +353,10 @@ fun StacksScreen(
                                     linkHost = group.linkHost,
                                     busy = ui.busy,
                                     pinnedOf = pinnedOf,
+                                    isFavorite = isFavorite,
+                                    onToggleContainerFavorite = { container ->
+                                        viewModel.toggleFavoriteContainer(stack.envId, container.name)
+                                    },
                                     onPin = { container ->
                                         pinTarget = PinTarget(stack.envId, container)
                                     },
@@ -371,9 +409,11 @@ private fun ContainersGrid(
     columns: Int,
     busy: Set<String>,
     pinnedOf: (Int, String) -> Set<Int>,
+    isFavorite: (Int, String) -> Boolean,
     onAction: (ContainerEntry, StackAction) -> Unit,
     onOpenLogs: (ContainerEntry) -> Unit,
     onPin: (ContainerEntry) -> Unit,
+    onToggleFavorite: (Int, String) -> Unit,
 ) {
     if (entries.isEmpty()) {
         Text(
@@ -397,22 +437,26 @@ private fun ContainersGrid(
                 entry = entry,
                 busy = entry.container.id in busy,
                 pinned = pinnedOf(entry.envId, entry.container.name),
+                favorite = isFavorite(entry.envId, entry.container.name),
                 onAction = { action -> onAction(entry, action) },
                 onOpenLogs = { onOpenLogs(entry) },
                 onPin = { onPin(entry) },
+                onToggleFavorite = { onToggleFavorite(entry.envId, entry.container.name) },
             )
         }
     }
 }
 
 @Composable
-private fun ContainerCard(
+internal fun ContainerCard(
     entry: ContainerEntry,
     busy: Boolean,
     pinned: Set<Int>,
+    favorite: Boolean,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
     onPin: () -> Unit,
+    onToggleFavorite: () -> Unit,
 ) {
     val container = entry.container
 
@@ -479,7 +523,7 @@ private fun ContainerCard(
                     Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
                 }
 
-                ContainerMenu(container.name, onPin)
+                ContainerMenu(container.name, favorite, onPin, onToggleFavorite)
 
                 if (busy) {
                     Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -589,6 +633,7 @@ private fun StackCard(
     linkHost: String,
     busy: Set<String>,
     pinnedOf: (Int, String) -> Set<Int>,
+    isFavorite: (Int, String) -> Boolean,
     favorite: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -597,6 +642,7 @@ private fun StackCard(
     onContainerAction: (ContainerView, StackAction) -> Unit,
     onOpenLogs: (ContainerView) -> Unit,
     onPin: (ContainerView) -> Unit,
+    onToggleContainerFavorite: (ContainerView) -> Unit,
 ) {
     val working = stack.key in busy
     var menuOpen by remember { mutableStateOf(false) }
@@ -747,9 +793,11 @@ private fun StackCard(
                         linkHost = linkHost,
                         busy = container.id in busy,
                         pinned = pinnedOf(stack.envId, container.name),
+                        favorite = isFavorite(stack.envId, container.name),
                         onAction = { action -> onContainerAction(container, action) },
                         onOpenLogs = { onOpenLogs(container) },
                         onPin = { onPin(container) },
+                        onToggleFavorite = { onToggleContainerFavorite(container) },
                     )
                 }
             }
@@ -763,9 +811,11 @@ private fun ContainerRow(
     linkHost: String,
     busy: Boolean,
     pinned: Set<Int>,
+    favorite: Boolean,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
     onPin: () -> Unit,
+    onToggleFavorite: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -798,7 +848,7 @@ private fun ContainerRow(
             Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
         }
 
-        ContainerMenu(container.name, onPin)
+        ContainerMenu(container.name, favorite, onPin, onToggleFavorite)
 
         if (busy) {
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -824,7 +874,12 @@ private fun ContainerRow(
  * pression longue : un reglage qu'on ne trouve pas n'existe pas.
  */
 @Composable
-private fun ContainerMenu(containerName: String, onPin: () -> Unit) {
+private fun ContainerMenu(
+    containerName: String,
+    favorite: Boolean,
+    onPin: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
 
     Box {
@@ -832,6 +887,22 @@ private fun ContainerMenu(containerName: String, onPin: () -> Unit) {
             Icon(Icons.Default.MoreVert, contentDescription = "Réglages de $containerName")
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // Volontairement dans le menu et non sur une etoile : l'etoile des
+            // stacks veut deja dire « epingler au widget », et deux etoiles pour
+            // deux sens differents sur le meme ecran est un piege.
+            DropdownMenuItem(
+                text = { Text(if (favorite) "Retirer des favoris" else "Ajouter aux favoris") },
+                onClick = {
+                    open = false
+                    onToggleFavorite()
+                },
+                leadingIcon = {
+                    Icon(
+                        if (favorite) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        contentDescription = null,
+                    )
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Port du raccourci…") },
                 onClick = {

@@ -10,9 +10,13 @@ import dev.mkdev.portainerremote.data.store.FavoriteStack
 import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.PrefsStore
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.data.store.containerNameOfKey
+import dev.mkdev.portainerremote.data.store.envIdOfKey
 import dev.mkdev.portainerremote.data.store.portPinKey
+import dev.mkdev.portainerremote.data.store.serverIdOfKey
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
+import dev.mkdev.portainerremote.domain.FavoritesView
 import dev.mkdev.portainerremote.domain.Outcome
 import dev.mkdev.portainerremote.domain.RunState
 import dev.mkdev.portainerremote.domain.Server
@@ -29,7 +33,22 @@ import kotlinx.coroutines.launch
 enum class StacksTab(val label: String) {
     STACKS("Stacks"),
     CONTAINERS("Conteneurs"),
+    FAVORITES("Favoris"),
 }
+
+/**
+ * Un conteneur favori.
+ *
+ * [entry] est nul quand le conteneur n'est plus dans la liste : renomme,
+ * supprime, ou environnement injoignable. Ce cas doit rester affiche, sinon le
+ * favori devient impossible a retirer.
+ */
+data class FavoriteEntry(
+    val key: String,
+    val name: String,
+    val envId: Int,
+    val entry: ContainerEntry?,
+)
 
 /**
  * Un conteneur sorti de son stack, pour l'onglet a plat.
@@ -67,6 +86,9 @@ data class StacksUi(
      * web ; ce choix-la est la seule source sure.
      */
     val pinnedPorts: Map<String, Int> = emptyMap(),
+    /** Clefs des conteneurs favoris, tous serveurs confondus. */
+    val favoriteContainers: Set<String> = emptySet(),
+    val favoritesView: FavoritesView = FavoritesView.SHORTCUTS,
 ) {
     /**
      * Recherche, filtre et tri appliqués à l'affichage seulement : les données
@@ -148,12 +170,49 @@ data class StacksUi(
                 .sortedWith(comparator)
         }
 
+    /**
+     * Les favoris du serveur courant, resolus quand c'est possible.
+     *
+     * Le filtre d'etat ne s'applique qu'aux favoris retrouves : un favori
+     * introuvable n'a pas d'etat, et le masquer sur ce critere le rendrait
+     * inaccessible.
+     */
+    val visibleFavorites: List<FavoriteEntry>
+        get() {
+            val serverId = server?.id ?: return emptyList()
+            val needle = query.trim().lowercase()
+            val resolved = visibleContainers.associateBy {
+                "$serverId|${it.envId}|${it.container.name}"
+            }
+            val all = groups
+                .flatMap { group -> group.stacks.flatMap { it.containers.map { c -> c.name } } }
+                .toSet()
+
+            return favoriteContainers
+                .filter { serverIdOfKey(it) == serverId }
+                .map { key ->
+                    FavoriteEntry(
+                        key = key,
+                        name = containerNameOfKey(key),
+                        envId = envIdOfKey(key),
+                        entry = resolved[key],
+                    )
+                }
+                // Un favori absent des donnees brutes est un fantome ; un favori
+                // present mais ecarte par le filtre courant se cache normalement.
+                .filter { it.entry != null || it.name !in all }
+                .filter { needle.isEmpty() || it.name.lowercase().contains(needle) }
+                .filter { it.entry != null || filter == StackFilter.ALL }
+                .sortedBy { it.name.lowercase() }
+        }
+
     val filtering: Boolean get() = query.isNotBlank() || filter != StackFilter.ALL
 
     val visibleCount: Int
         get() = when (tab) {
             StacksTab.STACKS -> visibleGroups.sumOf { it.stacks.size }
             StacksTab.CONTAINERS -> visibleContainers.size
+            StacksTab.FAVORITES -> visibleFavorites.size
         }
 }
 
@@ -186,6 +245,10 @@ class StacksViewModel(
                 .map { it.stackKey }
                 .toSet()
             val pins = prefsStore.currentPinnedPorts()
+            val favoriteContainers = prefsStore.currentFavoriteContainers()
+            val view = FavoritesView.entries
+                .firstOrNull { it.name == prefsStore.favoritesView() }
+                ?: FavoritesView.SHORTCUTS
 
             when (val result = repository.load(server)) {
                 is ApiResult.Ok -> _ui.update {
@@ -196,6 +259,8 @@ class StacksViewModel(
                         error = null,
                         favorites = pinned,
                         pinnedPorts = pins,
+                        favoriteContainers = favoriteContainers,
+                        favoritesView = view,
                     )
                 }
                 else -> _ui.update {
@@ -205,9 +270,52 @@ class StacksViewModel(
                         error = result.errorText(),
                         favorites = pinned,
                         pinnedPorts = pins,
+                        favoriteContainers = favoriteContainers,
+                        favoritesView = view,
                     )
                 }
             }
+        }
+    }
+
+    fun toggleFavoriteContainer(envId: Int, containerName: String) {
+        viewModelScope.launch {
+            val key = portPinKey(serverId, envId, containerName)
+            val nowFavorite = prefsStore.toggleFavoriteContainer(key)
+            _ui.update {
+                it.copy(
+                    favoriteContainers = if (nowFavorite) {
+                        it.favoriteContainers + key
+                    } else {
+                        it.favoriteContainers - key
+                    },
+                    message = if (nowFavorite) {
+                        "$containerName ajouté aux favoris."
+                    } else {
+                        "$containerName retiré des favoris."
+                    },
+                )
+            }
+        }
+    }
+
+    /** Retrait par clef : le seul moyen de se debarrasser d'un favori introuvable. */
+    fun removeFavoriteContainer(key: String) {
+        viewModelScope.launch {
+            prefsStore.toggleFavoriteContainer(key)
+            _ui.update {
+                it.copy(
+                    favoriteContainers = it.favoriteContainers - key,
+                    message = "${containerNameOfKey(key)} retiré des favoris.",
+                )
+            }
+        }
+    }
+
+    fun setFavoritesView(mode: FavoritesView) {
+        viewModelScope.launch {
+            prefsStore.setFavoritesView(mode.name)
+            _ui.update { it.copy(favoritesView = mode) }
         }
     }
 

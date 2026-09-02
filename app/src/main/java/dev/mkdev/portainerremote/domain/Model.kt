@@ -196,6 +196,18 @@ enum class StackSort(val label: String) {
     STATE("État d'abord"),
 }
 
+/**
+ * Deux lectures de l'onglet Favoris : « ou est-ce que je clique » et « comment
+ * va ce conteneur ». Elles ne tiennent pas dans la meme carte.
+ */
+enum class FavoritesView(val label: String) {
+    /** Une tuile par conteneur, reduite a son raccourci. Un appui ouvre le service. */
+    SHORTCUTS("Raccourcis"),
+
+    /** La carte complete : etat, image, ports, actions. */
+    DETAILED("Détaillé"),
+}
+
 enum class ImageFilter(val label: String) {
     ALL("Toutes"),
     UNUSED("Inutilisées"),

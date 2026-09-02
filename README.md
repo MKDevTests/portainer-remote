@@ -31,6 +31,7 @@ en géométrie téléphone et en géométrie tablette.
 | Consultation des logs des conteneurs | fait |
 | Ports publiés et raccourci vers l'interface web | fait |
 | Choix manuel du port de raccourci | fait |
+| Onglet Favoris, en raccourcis ou en détaillé | fait |
 
 ### Mises à jour
 
@@ -138,6 +139,35 @@ Le protocole, lui, est deviné : `https` sur 443, 8443 et 9443, `http` ailleurs.
 La liste est courte à dessein — deviner `https` à tort donne une erreur de
 certificat illisible, deviner `http` à tort donne une redirection que le
 navigateur suit tout seul.
+
+### Favoris
+
+Un troisième onglet, après Stacks et Conteneurs. Le menu d'un conteneur
+l'y ajoute ; l'onglet se lit de deux façons, au choix :
+
+- **Raccourcis** : une tuile par conteneur, réduite à son nom et à son port.
+  Un appui ouvre le service. C'est un lanceur, pas un tableau de bord.
+- **Détaillé** : la carte complète de l'onglet Conteneurs — état, image, ports,
+  actions, logs.
+
+Le port de la tuile est celui choisi à la main s'il existe, sinon le premier
+port TCP joignable. Quand il n'y en a aucun, la tuile n'est pas morte pour
+autant : l'appui ouvre le choix du port, qui est précisément ce qui lui manque.
+
+Ces favoris-là **ne sont pas ceux du widget**. L'étoile d'un stack veut dire
+« épingler au widget » et alimente `FavoriteStack`, que le widget, la tuile
+Quick Settings et `StackActionWorker` retrouvent par leur `stackKey` ; un
+conteneur rangé au même endroit n'aurait aucun stack correspondant et casserait
+le widget sans bruit. Deux étoiles pour deux sens sur le même écran étant par
+ailleurs un piège, le favori de conteneur vit dans le menu, avec un marque-page
+pour icône.
+
+Un favori dont le conteneur a disparu — renommé, supprimé, environnement hors
+ligne — reste affiché et grisé. Le masquer le rendrait impossible à retirer, au
+moment exact où on veut le faire.
+
+Comme les ports épinglés, favoris et mode d'affichage sont gardés sous le **nom**
+du conteneur et partent dans la sauvegarde chiffrée.
 
 ### Logs
 

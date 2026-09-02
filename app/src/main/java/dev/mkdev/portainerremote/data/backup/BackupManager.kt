@@ -69,6 +69,8 @@ class BackupManager(
             servers = servers,
             favorites = favorites,
             pinnedPorts = prefsStore.currentPinnedPorts(),
+            favoriteContainers = prefsStore.currentFavoriteContainers().toList(),
+            favoritesView = prefsStore.favoritesView(),
         )
     }
 
@@ -121,6 +123,10 @@ class BackupManager(
             )
 
             prefsStore.addPinnedPorts(payload.pinnedPorts)
+            prefsStore.addFavoriteContainers(payload.favoriteContainers)
+            if (payload.favoritesView.isNotBlank()) {
+                prefsStore.setFavoritesView(payload.favoritesView)
+            }
 
             ImportResult(payload.servers.size, payload.favorites.size)
         }
