@@ -50,6 +50,13 @@ data class PortBinding(
     val type: String,
     /** Interface d'ecoute cote hote. 0.0.0.0 et :: valent "toutes". */
     val bindIp: String,
+    /**
+     * Vrai quand le port ne vient pas d'une liaison rapportee par Docker mais
+     * du EXPOSE de l'image, seule source disponible en reseau host. Tres
+     * souvent juste, jamais garanti : l'information est portee jusqu'au
+     * descriptif d'accessibilite plutot que tue.
+     */
+    val deduced: Boolean = false,
 ) {
     val udp: Boolean get() = type.equals("udp", ignoreCase = true)
 
@@ -102,6 +109,8 @@ data class ContainerView(
     val network: NetworkKind = NetworkKind.NORMAL,
     /** Nom du conteneur dont la pile reseau est partagee, si elle est retrouvable. */
     val sharesNetworkWith: String? = null,
+    /** Identifiant de ce meme conteneur : c'est lui qui porte les ports publies. */
+    val sharesNetworkId: String? = null,
 ) {
     val running: Boolean get() = state.equals("running", ignoreCase = true)
 }

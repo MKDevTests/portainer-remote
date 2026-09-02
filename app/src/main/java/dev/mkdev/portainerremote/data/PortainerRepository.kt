@@ -5,6 +5,7 @@ import dev.mkdev.portainerremote.core.valueOr
 import dev.mkdev.portainerremote.core.WebUi
 import dev.mkdev.portainerremote.core.valueOrNull
 import dev.mkdev.portainerremote.data.model.DockerContainer
+import dev.mkdev.portainerremote.data.model.DockerContainerDetail
 import dev.mkdev.portainerremote.data.model.DockerPort
 import dev.mkdev.portainerremote.data.model.PortainerEndpoint
 import dev.mkdev.portainerremote.data.model.PortainerStack
@@ -24,6 +25,9 @@ import dev.mkdev.portainerremote.domain.Server
 import dev.mkdev.portainerremote.domain.StackAction
 import dev.mkdev.portainerremote.domain.StackOrigin
 import dev.mkdev.portainerremote.domain.StackView
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -32,6 +36,12 @@ private const val LABEL_COMPOSE = "com.docker.compose.project"
 private const val LABEL_SWARM = "com.docker.stack.namespace"
 private const val NETWORK_HOST = "host"
 private const val NETWORK_SHARED = "container:"
+
+/**
+ * Inspects lances de front. Six suffisent a masquer la latence sans ouvrir
+ * quinze connexions simultanees vers un NAS joint par VPN.
+ */
+private const val INSPECT_BATCH = 6
 
 /**
  * Fusionne les deux sources de stacks et applique les actions.
@@ -103,12 +113,13 @@ class PortainerRepository(private val store: ServerStore) {
                         EnvGroup(env.id, env.name, env.kindLabel, dockerCapable = false, stacks = emptyList())
                     } else {
                         val containers = client.containers(env.id).valueOr(emptyList())
+                        val stacks = merge(env, managed.filter { it.endpointId == env.id }, containers)
                         EnvGroup(
                             envId = env.id,
                             envName = env.name,
                             kindLabel = env.kindLabel,
                             dockerCapable = true,
-                            stacks = merge(env, managed.filter { it.endpointId == env.id }, containers),
+                            stacks = withExposedPorts(client, env.id, stacks, containers),
                             linkHost = WebUi.resolveHost(server.baseUrl, env.publicUrl, env.url),
                         )
                     }
@@ -202,8 +213,95 @@ class PortainerRepository(private val store: ServerStore) {
                 else -> NetworkKind.NORMAL
             },
             sharesNetworkWith = sharedId?.let { byId[it]?.displayName },
+            sharesNetworkId = sharedId,
         )
     }
+
+    /**
+     * Complete les conteneurs muets par un inspect.
+     *
+     * /containers/json ne rapporte que les liaisons de ports, et un conteneur
+     * en reseau host ou en reseau partage n'en a aucune. Leur port existe
+     * pourtant. Il faut un appel par conteneur pour l'obtenir, ce qui interdit
+     * de le faire pour tous : seuls les conteneurs sans port dont le mode
+     * reseau explique l'absence sont interroges. Sur l'instance sondee, cela
+     * fait 15 appels au lieu de 48.
+     *
+     * Un inspect qui echoue n'est pas une erreur : le conteneur retombe sur sa
+     * mention de mode reseau, exactement comme avant.
+     */
+    private suspend fun withExposedPorts(
+        client: PortainerClient,
+        envId: Int,
+        stacks: List<StackView>,
+        containers: List<DockerContainer>,
+    ): List<StackView> {
+        val pending = stacks.asSequence()
+            .flatMap { it.containers }
+            .filter { it.ports.isEmpty() && it.network != NetworkKind.NORMAL }
+            .map { it.id }
+            .distinct()
+            .toList()
+        if (pending.isEmpty()) return stacks
+
+        val exposed = mutableMapOf<String, List<ExposedPort>>()
+        coroutineScope {
+            pending.chunked(INSPECT_BATCH).forEach { batch ->
+                batch
+                    .map { id -> async { id to client.inspect(envId, id).valueOrNull()?.exposed() } }
+                    .awaitAll()
+                    .forEach { (id, ports) -> if (ports != null) exposed[id] = ports }
+            }
+        }
+
+        val byId = containers.associateBy { it.id }
+        return stacks.map { stack ->
+            stack.copy(
+                containers = stack.containers.map { view ->
+                    view.completedWith(exposed[view.id].orEmpty(), byId)
+                },
+            )
+        }
+    }
+
+    private fun ContainerView.completedWith(
+        exposed: List<ExposedPort>,
+        byId: Map<String, DockerContainer>,
+    ): ContainerView = when {
+        exposed.isEmpty() || ports.isNotEmpty() -> this
+
+        // En reseau host, le port d'ecoute du service est celui de la machine :
+        // il n'y a pas de traduction entre un port prive et un port public.
+        network == NetworkKind.HOST -> copy(
+            ports = exposed
+                .map { PortBinding(it.port, it.port, it.type, bindIp = "", deduced = true) }
+                .distinctBy { it.publicPort to it.type }
+                .sortedBy { it.publicPort },
+        )
+
+        // En reseau partage, la cible publie parfois vingt ports. Croiser avec
+        // ce que ce conteneur expose dit lesquels sont les siens - et c'est la
+        // seule facon de le savoir sans deviner.
+        network == NetworkKind.SHARED -> {
+            val wanted = exposed.map { it.port }.toSet()
+            copy(
+                ports = byId[sharesNetworkId]?.ports.orEmpty()
+                    .filter { it.privatePort in wanted }
+                    .toBindings(),
+            )
+        }
+
+        else -> this
+    }
+
+    /** Une clef "8080/tcp" du champ ExposedPorts, decoupee. */
+    private data class ExposedPort(val port: Int, val type: String)
+
+    private fun DockerContainerDetail.exposed(): List<ExposedPort> =
+        config.exposedPorts.keys.mapNotNull { key ->
+            val port = key.substringBefore('/').toIntOrNull() ?: return@mapNotNull null
+            ExposedPort(port, key.substringAfter('/', "tcp"))
+        }
 
     /**
      * Mesure : 46 des 96 entrees d'une instance reelle etaient des doublons,

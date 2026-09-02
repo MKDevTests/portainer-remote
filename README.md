@@ -82,13 +82,29 @@ Quatre décisions viennent de la mesure sur une instance réelle :
   HTTP ; un port lié à `127.0.0.1` est joignable par l'hôte et par lui seul. Les
   deux gardent leur pastille et perdent leur lien, plutôt que d'en offrir un mort.
 - **Le mode réseau explique les conteneurs muets.** Sur 26 conteneurs sans port,
-  7 sont en réseau `host` — Docker ne rapporte alors rien, pas même un port privé,
-  et le compose n'en déclare pas davantage — et 8 partagent la pile d'un autre
-  conteneur. L'application le dit au lieu de laisser un blanc qui ressemble à un
-  bug. Un conteneur en réseau partagé ne recopie pas les ports de sa cible :
-  elle en publie parfois vingt, et rien ne dit lequel lui appartient.
+  7 sont en réseau `host` — Docker ne rapporte alors rien, pas même un port privé —
+  et 8 partagent la pile d'un autre conteneur. L'application va chercher leurs
+  ports par un `inspect`, décrit ci-dessous, et se rabat sur la mention du mode
+  réseau quand il ne donne rien.
 - **Plafond d'affichage.** Un conteneur mesuré publie 24 ports, la moyenne est
   de 1. Au-delà de quatre pastilles, le reste se déplie à la demande.
+
+#### Les conteneurs que la liste ne décrit pas
+
+`/containers/json` ne rapporte que des **liaisons de ports**, et un conteneur en
+réseau `host` ou en réseau partagé n'en a aucune. Son port existe pourtant. Il
+faut alors un `inspect` par conteneur : l'application ne le fait que pour ceux
+dont la liste est vide et dont le mode réseau explique l'absence — 15 appels au
+lieu de 48 sur l'instance mesurée, lancés six à la fois. Un `inspect` qui échoue
+n'est pas une erreur : le conteneur retombe sur sa mention de mode réseau.
+
+- **Réseau `host`** : le port d'écoute du service est celui de la machine, sans
+  traduction. C'est le `EXPOSE` de l'image qui le donne — souvent juste, jamais
+  garanti. Le port s'affiche comme les autres ; le descriptif d'accessibilité
+  précise qu'il est déduit.
+- **Réseau partagé** : la cible publie parfois vingt ports, et rien dans la liste
+  ne dit lequel appartient au conteneur qui la rejoint. Croiser ce qu'il expose
+  avec ce qu'elle publie le dit exactement, sans rien deviner.
 
 L'hôte visé par le lien n'est pas deviné, parce que **Portainer et Docker ne
 tournent pas forcément sur la même machine** : un port publié appartient à

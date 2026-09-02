@@ -4,6 +4,7 @@ import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.data.model.AuthPayload
 import dev.mkdev.portainerremote.data.model.AuthResponse
 import dev.mkdev.portainerremote.data.model.DockerContainer
+import dev.mkdev.portainerremote.data.model.DockerContainerDetail
 import dev.mkdev.portainerremote.data.model.DockerImage
 import dev.mkdev.portainerremote.data.model.PortainerEndpoint
 import dev.mkdev.portainerremote.data.model.PortainerStack
@@ -172,6 +173,16 @@ class PortainerClient(
     suspend fun containers(envId: Int): ApiResult<List<DockerContainer>> = guard {
         send(HttpMethod.Get, "/api/endpoints/$envId/docker/containers/json?all=true")
             .decode<List<DockerContainer>>()
+    }
+
+    /**
+     * Un appel par conteneur : reserve aux conteneurs dont la liste des ports
+     * est vide alors que leur mode reseau explique pourquoi. Les appeler tous
+     * couterait autant de requetes que de conteneurs, pour rien.
+     */
+    suspend fun inspect(envId: Int, containerId: String): ApiResult<DockerContainerDetail> = guard {
+        send(HttpMethod.Get, "/api/endpoints/$envId/docker/containers/$containerId/json")
+            .decode<DockerContainerDetail>()
     }
 
     suspend fun logs(

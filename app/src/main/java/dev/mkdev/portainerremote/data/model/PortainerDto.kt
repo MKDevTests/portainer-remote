@@ -2,6 +2,7 @@ package dev.mkdev.portainerremote.data.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 /*
  * Regle 3 de l'etude : parsing tolerant.
@@ -122,6 +123,28 @@ data class DockerPort(
     @SerialName("PrivatePort") val privatePort: Int = 0,
     @SerialName("PublicPort") val publicPort: Int = 0,
     @SerialName("Type") val type: String = "tcp",
+)
+
+/**
+ * Reponse de /containers/{id}/json, reduite au seul champ utile ici.
+ *
+ * Un conteneur en reseau host ne publie rien au sens de Docker : il ecoute
+ * directement sur les interfaces de la machine. La liste des ports est alors
+ * vide, et c'est le EXPOSE de l'image - repris ici - qui dit sur quel port le
+ * service repond.
+ */
+@Serializable
+data class DockerContainerDetail(
+    @SerialName("Config") val config: DockerConfig = DockerConfig(),
+)
+
+@Serializable
+data class DockerConfig(
+    /**
+     * Clefs de la forme "8080/tcp", valeurs vides. Seules les clefs comptent,
+     * d'ou le JsonElement : la valeur n'a pas de forme stable a modeliser.
+     */
+    @SerialName("ExposedPorts") val exposedPorts: Map<String, JsonElement> = emptyMap(),
 )
 
 /**

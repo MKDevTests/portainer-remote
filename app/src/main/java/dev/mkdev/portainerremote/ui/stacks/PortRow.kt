@@ -110,6 +110,9 @@ private fun PortChip(port: PortBinding, linkHost: String) {
         text = port.label + suffix,
         highlighted = url != null,
         description = when {
+            // « deduit » ne se voit pas a l'ecran : la pastille reste compacte,
+            // mais l'information reste disponible pour qui la cherche.
+            url != null && port.deduced -> "Ouvrir $url, port déduit de l'image"
             url != null -> "Ouvrir $url"
             port.udp -> "Port ${port.publicPort} en UDP, pas de page web"
             else -> "Port ${port.publicPort} lié à la machine seule, injoignable d'ici"
