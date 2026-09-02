@@ -5,9 +5,23 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
 
 private val Context.prefsDataStore by preferencesDataStore(name = "portainer_prefs")
+
+/**
+ * Clef d'un port epingle.
+ *
+ * Volontairement fondee sur le **nom** du conteneur et non sur son identifiant :
+ * un `compose up` recree le conteneur avec un nouvel identifiant mais garde son
+ * nom. Une clef par identifiant serait perdue au premier redeploiement, c'est-a-dire
+ * exactement quand le reglage doit survivre.
+ */
+fun portPinKey(serverId: String, envId: Int, containerName: String): String =
+    "$serverId|$envId|$containerName"
 
 /** Petits reglages qui n'appartiennent ni aux serveurs ni aux favoris. */
 class PrefsStore(context: Context) {
@@ -15,6 +29,8 @@ class PrefsStore(context: Context) {
     private val appContext = context.applicationContext
     private val notifiedVersionKey = stringPreferencesKey("notified_version")
     private val lastExportKey = longPreferencesKey("last_export_at")
+    private val pinnedPortsKey = stringPreferencesKey("pinned_ports_json")
+    private val json = Json { ignoreUnknownKeys = true }
 
     /**
      * Derniere version deja annoncee. Sans elle, la verification quotidienne
@@ -26,6 +42,41 @@ class PrefsStore(context: Context) {
     suspend fun setNotifiedVersion(version: String) {
         appContext.prefsDataStore.edit { it[notifiedVersionKey] = version }
     }
+
+    /**
+     * Port choisi a la main pour le raccourci d'un conteneur, par clef.
+     *
+     * Aucune heuristique ne peut deviner lequel des ports publies porte
+     * l'interface web : un client BitTorrent en publie plusieurs et rien ne les
+     * distingue. C'est donc a l'utilisateur de trancher, une fois.
+     */
+    val pinnedPorts: Flow<Map<String, Int>> =
+        appContext.prefsDataStore.data.map { decodePins(it[pinnedPortsKey]) }
+
+    suspend fun currentPinnedPorts(): Map<String, Int> =
+        decodePins(appContext.prefsDataStore.data.first()[pinnedPortsKey])
+
+    /** Un port nul efface le reglage : c'est ainsi qu'on revient au comportement automatique. */
+    suspend fun setPinnedPort(key: String, port: Int?) {
+        appContext.prefsDataStore.edit { prefs ->
+            val pins = decodePins(prefs[pinnedPortsKey]).toMutableMap()
+            if (port == null) pins.remove(key) else pins[key] = port
+            prefs[pinnedPortsKey] = json.encodeToString(pins.toMap())
+        }
+    }
+
+    /** Fusionne sans rien retirer, pour la restauration d'une sauvegarde. */
+    suspend fun addPinnedPorts(pins: Map<String, Int>) {
+        if (pins.isEmpty()) return
+        appContext.prefsDataStore.edit { prefs ->
+            val merged = decodePins(prefs[pinnedPortsKey]) + pins
+            prefs[pinnedPortsKey] = json.encodeToString(merged)
+        }
+    }
+
+    private fun decodePins(raw: String?): Map<String, Int> =
+        if (raw.isNullOrBlank()) emptyMap()
+        else runCatching { json.decodeFromString<Map<String, Int>>(raw) }.getOrDefault(emptyMap())
 
     /** 0 si aucune sauvegarde n'a jamais ete exportee depuis cette installation. */
     suspend fun lastExportAt(): Long =

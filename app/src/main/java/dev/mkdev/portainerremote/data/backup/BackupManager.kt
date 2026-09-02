@@ -68,6 +68,7 @@ class BackupManager(
             appVersion = BuildConfig.VERSION_NAME,
             servers = servers,
             favorites = favorites,
+            pinnedPorts = prefsStore.currentPinnedPorts(),
         )
     }
 
@@ -118,6 +119,8 @@ class BackupManager(
                     FavoriteStack(it.serverId, it.serverLabel, it.stackKey, it.name, it.envId)
                 },
             )
+
+            prefsStore.addPinnedPorts(payload.pinnedPorts)
 
             ImportResult(payload.servers.size, payload.favorites.size)
         }

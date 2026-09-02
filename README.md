@@ -30,6 +30,7 @@ en géométrie téléphone et en géométrie tablette.
 | Sauvegarde chiffrée export / import | fait |
 | Consultation des logs des conteneurs | fait |
 | Ports publiés et raccourci vers l'interface web | fait |
+| Choix manuel du port de raccourci | fait |
 
 ### Mises à jour
 
@@ -105,6 +106,25 @@ n'est pas une erreur : le conteneur retombe sur sa mention de mode réseau.
 - **Réseau partagé** : la cible publie parfois vingt ports, et rien dans la liste
   ne dit lequel appartient au conteneur qui la rejoint. Croiser ce qu'il expose
   avec ce qu'elle publie le dit exactement, sans rien deviner.
+
+#### Choisir le port à la main
+
+Aucune règle ne peut désigner le port qui porte l'interface web. Un client
+BitTorrent en publie un pour ses pairs et un pour son interface, et rien dans
+l'API ne les distingue ; un service en réseau `host` dont l'image déclare
+`EXPOSE 8080` peut très bien écouter sur 8089 parce qu'une variable
+d'environnement l'a décidé.
+
+Le menu d'un conteneur ouvre donc **Port du raccourci…** : les ports détectés
+sont proposés d'un geste, et la saisie libre couvre le cas où le bon port
+n'apparaît nulle part. Le port choisi passe en tête, ne se replie jamais
+derrière un « +8 », et se distingue des autres à la couleur. Un champ vide
+revient au comportement automatique.
+
+Le réglage est gardé sous le **nom** du conteneur, pas sous son identifiant :
+un `compose up` recrée le conteneur avec un nouvel identifiant et garde son nom,
+et le réglage doit survivre précisément à ce moment-là. Il part dans la
+sauvegarde chiffrée avec le reste.
 
 L'hôte visé par le lien n'est pas deviné, parce que **Portainer et Docker ne
 tournent pas forcément sur la même machine** : un port publié appartient à

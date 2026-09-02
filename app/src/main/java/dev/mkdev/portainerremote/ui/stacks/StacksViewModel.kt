@@ -8,7 +8,9 @@ import dev.mkdev.portainerremote.data.PortainerRepository
 import dev.mkdev.portainerremote.data.WidgetSync
 import dev.mkdev.portainerremote.data.store.FavoriteStack
 import dev.mkdev.portainerremote.data.store.FavoritesStore
+import dev.mkdev.portainerremote.data.store.PrefsStore
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.data.store.portPinKey
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
 import dev.mkdev.portainerremote.domain.Outcome
@@ -59,6 +61,12 @@ data class StacksUi(
     val filter: StackFilter = StackFilter.ALL,
     val sort: StackSort = StackSort.NAME_ASC,
     val tab: StacksTab = StacksTab.STACKS,
+    /**
+     * Ports de raccourci choisis a la main, par clef de conteneur. Aucune
+     * heuristique ne peut deviner lequel des ports publies porte l'interface
+     * web ; ce choix-la est la seule source sure.
+     */
+    val pinnedPorts: Map<String, Int> = emptyMap(),
 ) {
     /**
      * Recherche, filtre et tri appliqués à l'affichage seulement : les données
@@ -155,6 +163,7 @@ class StacksViewModel(
     private val repository: PortainerRepository,
     private val favoritesStore: FavoritesStore,
     private val widgetSync: WidgetSync,
+    private val prefsStore: PrefsStore,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(StacksUi())
@@ -176,6 +185,7 @@ class StacksViewModel(
                 .filter { it.serverId == serverId }
                 .map { it.stackKey }
                 .toSet()
+            val pins = prefsStore.currentPinnedPorts()
 
             when (val result = repository.load(server)) {
                 is ApiResult.Ok -> _ui.update {
@@ -185,6 +195,7 @@ class StacksViewModel(
                         loading = false,
                         error = null,
                         favorites = pinned,
+                        pinnedPorts = pins,
                     )
                 }
                 else -> _ui.update {
@@ -193,8 +204,31 @@ class StacksViewModel(
                         loading = false,
                         error = result.errorText(),
                         favorites = pinned,
+                        pinnedPorts = pins,
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * Fixe - ou efface, avec un port nul - le port de raccourci d'un conteneur.
+     * Le reglage est garde sous le nom du conteneur, donc il survit a un
+     * redeploiement qui lui donnerait un nouvel identifiant.
+     */
+    fun setPinnedPort(envId: Int, containerName: String, port: Int?) {
+        viewModelScope.launch {
+            val key = portPinKey(serverId, envId, containerName)
+            prefsStore.setPinnedPort(key, port)
+            _ui.update {
+                it.copy(
+                    pinnedPorts = if (port == null) it.pinnedPorts - key else it.pinnedPorts + (key to port),
+                    message = if (port == null) {
+                        "Raccourci de $containerName effacé."
+                    } else {
+                        "Raccourci de $containerName sur le port $port."
+                    },
+                )
             }
         }
     }

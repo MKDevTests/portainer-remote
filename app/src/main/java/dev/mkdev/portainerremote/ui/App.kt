@@ -110,6 +110,7 @@ fun App(openUpdatesAtStart: Boolean = false) {
                                 container.repository,
                                 container.favoritesStore,
                                 container.widgetSync,
+                                container.prefsStore,
                             )
                         }
                     },

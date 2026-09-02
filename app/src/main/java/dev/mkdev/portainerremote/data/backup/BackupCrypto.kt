@@ -63,6 +63,11 @@ data class BackupPayload(
     val appVersion: String,
     val servers: List<BackupServer>,
     val favorites: List<BackupFavorite>,
+    /**
+     * Ports de raccourci choisis a la main. Valeur par defaut : une sauvegarde
+     * ecrite avant l'apparition du reglage doit rester importable.
+     */
+    val pinnedPorts: Map<String, Int> = emptyMap(),
 )
 
 class WrongPassphraseException : Exception("Phrase de passe incorrecte, ou fichier abîmé.")

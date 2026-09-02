@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -68,6 +69,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.data.store.portPinKey
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
 import dev.mkdev.portainerremote.domain.RunState
@@ -99,6 +101,27 @@ fun StacksScreen(
     var searchOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
+    var pinTarget by remember { mutableStateOf<PinTarget?>(null) }
+
+    val serverId = ui.server?.id.orEmpty()
+    // Le reglage est garde sous le nom du conteneur, pas sous son identifiant :
+    // un redeploiement change l'identifiant et garde le nom.
+    val pinnedOf: (Int, String) -> Set<Int> = { envId, name ->
+        ui.pinnedPorts[portPinKey(serverId, envId, name)]?.let { setOf(it) }.orEmpty()
+    }
+
+    pinTarget?.let { target ->
+        PortPinDialog(
+            containerName = target.container.name,
+            detected = target.container.ports,
+            current = ui.pinnedPorts[portPinKey(serverId, target.envId, target.container.name)],
+            onDismiss = { pinTarget = null },
+            onSave = { port ->
+                viewModel.setPinnedPort(target.envId, target.container.name, port)
+                pinTarget = null
+            },
+        )
+    }
 
     LaunchedEffect(ui.message) {
         ui.message?.let {
@@ -245,6 +268,10 @@ fun StacksScreen(
                             entries = ui.visibleContainers,
                             columns = columns,
                             busy = ui.busy,
+                            pinnedOf = pinnedOf,
+                            onPin = { entry ->
+                                pinTarget = PinTarget(entry.envId, entry.container)
+                            },
                             onAction = { entry, action ->
                                 viewModel.actOnContainer(entry.stack, entry.container, action)
                             },
@@ -291,6 +318,10 @@ fun StacksScreen(
                                     stack = stack,
                                     linkHost = group.linkHost,
                                     busy = ui.busy,
+                                    pinnedOf = pinnedOf,
+                                    onPin = { container ->
+                                        pinTarget = PinTarget(stack.envId, container)
+                                    },
                                     favorite = stack.key in ui.favorites,
                                     expanded = expanded[stack.key] == true,
                                     onToggle = {
@@ -339,8 +370,10 @@ private fun ContainersGrid(
     entries: List<ContainerEntry>,
     columns: Int,
     busy: Set<String>,
+    pinnedOf: (Int, String) -> Set<Int>,
     onAction: (ContainerEntry, StackAction) -> Unit,
     onOpenLogs: (ContainerEntry) -> Unit,
+    onPin: (ContainerEntry) -> Unit,
 ) {
     if (entries.isEmpty()) {
         Text(
@@ -363,8 +396,10 @@ private fun ContainersGrid(
             ContainerCard(
                 entry = entry,
                 busy = entry.container.id in busy,
+                pinned = pinnedOf(entry.envId, entry.container.name),
                 onAction = { action -> onAction(entry, action) },
                 onOpenLogs = { onOpenLogs(entry) },
+                onPin = { onPin(entry) },
             )
         }
     }
@@ -374,8 +409,10 @@ private fun ContainersGrid(
 private fun ContainerCard(
     entry: ContainerEntry,
     busy: Boolean,
+    pinned: Set<Int>,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
+    onPin: () -> Unit,
 ) {
     val container = entry.container
 
@@ -414,6 +451,7 @@ private fun ContainerCard(
                 linkHost = entry.linkHost,
                 network = container.network,
                 sharesNetworkWith = container.sharesNetworkWith,
+                pinned = pinned,
             )
 
             Row(
@@ -440,6 +478,8 @@ private fun ContainerCard(
                 IconButton(onClick = onOpenLogs) {
                     Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
                 }
+
+                ContainerMenu(container.name, onPin)
 
                 if (busy) {
                     Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -548,6 +588,7 @@ private fun StackCard(
     stack: StackView,
     linkHost: String,
     busy: Set<String>,
+    pinnedOf: (Int, String) -> Set<Int>,
     favorite: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -555,6 +596,7 @@ private fun StackCard(
     onAction: (StackAction) -> Unit,
     onContainerAction: (ContainerView, StackAction) -> Unit,
     onOpenLogs: (ContainerView) -> Unit,
+    onPin: (ContainerView) -> Unit,
 ) {
     val working = stack.key in busy
     var menuOpen by remember { mutableStateOf(false) }
@@ -680,7 +722,15 @@ private fun StackCard(
 
             // Tous les ports du stack, dedupliques : la question posee a ce
             // niveau est « par ou j'y accede », pas « quel conteneur les porte ».
-            PortRow(ports = stack.ports, linkHost = linkHost)
+            PortRow(
+                ports = stack.ports,
+                linkHost = linkHost,
+                // Un port epingle sur un conteneur remonte au stack : c'est a ce
+                // niveau qu'on cherche « par ou j'ouvre ce service ».
+                pinned = stack.containers
+                    .flatMap { pinnedOf(stack.envId, it.name) }
+                    .toSet(),
+            )
 
             if (stack.origin == StackOrigin.MANAGED && stack.containers.isEmpty()) {
                 Text(
@@ -696,8 +746,10 @@ private fun StackCard(
                         container = container,
                         linkHost = linkHost,
                         busy = container.id in busy,
+                        pinned = pinnedOf(stack.envId, container.name),
                         onAction = { action -> onContainerAction(container, action) },
                         onOpenLogs = { onOpenLogs(container) },
+                        onPin = { onPin(container) },
                     )
                 }
             }
@@ -710,8 +762,10 @@ private fun ContainerRow(
     container: ContainerView,
     linkHost: String,
     busy: Boolean,
+    pinned: Set<Int>,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
+    onPin: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -736,12 +790,15 @@ private fun ContainerRow(
                 linkHost = linkHost,
                 network = container.network,
                 sharesNetworkWith = container.sharesNetworkWith,
+                pinned = pinned,
             )
         }
 
         IconButton(onClick = onOpenLogs) {
             Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
         }
+
+        ContainerMenu(container.name, onPin)
 
         if (busy) {
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -761,3 +818,31 @@ private fun ContainerRow(
         }
     }
 }
+
+/**
+ * Le seul reglage par conteneur, sorti dans un menu plutot que dans une
+ * pression longue : un reglage qu'on ne trouve pas n'existe pas.
+ */
+@Composable
+private fun ContainerMenu(containerName: String, onPin: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(Icons.Default.MoreVert, contentDescription = "Réglages de $containerName")
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            DropdownMenuItem(
+                text = { Text("Port du raccourci…") },
+                onClick = {
+                    open = false
+                    onPin()
+                },
+                leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+            )
+        }
+    }
+}
+
+/** Le conteneur dont on regle le port de raccourci. */
+private data class PinTarget(val envId: Int, val container: ContainerView)

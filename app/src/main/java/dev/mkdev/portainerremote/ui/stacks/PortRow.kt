@@ -50,11 +50,23 @@ internal fun PortRow(
     modifier: Modifier = Modifier,
     network: NetworkKind = NetworkKind.NORMAL,
     sharesNetworkWith: String? = null,
+    pinned: Set<Int> = emptySet(),
 ) {
+    // Un port epingle s'affiche meme si l'API ne l'a jamais rapporte : couvrir
+    // ce qu'elle ne dit pas est precisement la raison d'etre du reglage.
+    val invented = pinned
+        .filter { port -> ports.none { it.publicPort == port } }
+        .sorted()
+        .map { PortBinding(it, it, "tcp", bindIp = "") }
+
+    val first = (invented + ports).filter { it.publicPort in pinned }
+    val rest = ports.filterNot { it.publicPort in pinned }
+
     // Un mode reseau particulier explique une carte sans port : sans ce mot,
-    // l'absence ressemble a un bug de l'application.
+    // l'absence ressemble a un bug de l'application. Un port epingle rend la
+    // mention inutile : la question qu'elle repondait est reglee.
     val note = when {
-        ports.isNotEmpty() -> null
+        first.isNotEmpty() || rest.isNotEmpty() -> null
         network == NetworkKind.HOST -> "réseau host · ports de la machine"
         network == NetworkKind.SHARED && sharesNetworkWith != null -> "réseau de $sharesNetworkWith"
         network == NetworkKind.SHARED -> "réseau partagé"
@@ -71,18 +83,20 @@ internal fun PortRow(
         return
     }
 
-    if (ports.isEmpty()) return
+    if (first.isEmpty() && rest.isEmpty()) return
 
-    var expanded by remember(ports) { mutableStateOf(false) }
-    val shown = if (expanded) ports else ports.take(COLLAPSED)
-    val hidden = ports.size - shown.size
+    var expanded by remember(ports, pinned) { mutableStateOf(false) }
+    // Un port epingle n'est jamais replie : le cacher derriere « +8 » reviendrait
+    // a annuler le choix que l'utilisateur vient de faire.
+    val shown = if (expanded) first + rest else first + rest.take(COLLAPSED - first.size)
+    val hidden = first.size + rest.size - shown.size
 
     FlowRow(
         modifier = modifier.fillMaxWidth().padding(top = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        shown.forEach { port -> PortChip(port, linkHost) }
+        shown.forEach { port -> PortChip(port, linkHost, port.publicPort in pinned) }
 
         if (hidden > 0) {
             Chip(
@@ -96,7 +110,7 @@ internal fun PortRow(
 }
 
 @Composable
-private fun PortChip(port: PortBinding, linkHost: String) {
+private fun PortChip(port: PortBinding, linkHost: String, pinned: Boolean) {
     val context = LocalContext.current
     val url = if (port.linkable) WebUi.url(port.boundHost ?: linkHost, port.publicPort) else null
 
@@ -109,7 +123,9 @@ private fun PortChip(port: PortBinding, linkHost: String) {
     Chip(
         text = port.label + suffix,
         highlighted = url != null,
+        pinned = pinned,
         description = when {
+            url != null && pinned -> "Ouvrir $url, raccourci choisi"
             // « deduit » ne se voit pas a l'ecran : la pastille reste compacte,
             // mais l'information reste disponible pour qui la cherche.
             url != null && port.deduced -> "Ouvrir $url, port déduit de l'image"
@@ -138,18 +154,21 @@ private fun Chip(
     highlighted: Boolean,
     description: String,
     onClick: (() -> Unit)?,
+    pinned: Boolean = false,
 ) {
+    // Trois niveaux, et pas deux : le port choisi a la main doit se distinguer
+    // des autres liens, sans quoi l'epingler ne changerait rien a l'oeil.
     Surface(
         shape = RoundedCornerShape(6.dp),
-        color = if (highlighted) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.surfaceVariant
+        color = when {
+            pinned -> MaterialTheme.colorScheme.primary
+            highlighted -> MaterialTheme.colorScheme.secondaryContainer
+            else -> MaterialTheme.colorScheme.surfaceVariant
         },
-        contentColor = if (highlighted) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
+        contentColor = when {
+            pinned -> MaterialTheme.colorScheme.onPrimary
+            highlighted -> MaterialTheme.colorScheme.onSecondaryContainer
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
         modifier = Modifier
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
