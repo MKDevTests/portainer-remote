@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.DriveFileRenameOutline
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.MoreVert
@@ -71,6 +72,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.data.store.CustomLabel
+import dev.mkdev.portainerremote.data.store.LabelKind
 import dev.mkdev.portainerremote.data.store.portPinKey
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.EnvGroup
@@ -104,6 +107,7 @@ fun StacksScreen(
     var sortOpen by remember { mutableStateOf(false) }
     val searchFocus = remember { FocusRequester() }
     var pinTarget by remember { mutableStateOf<PinTarget?>(null) }
+    var labelTarget by remember { mutableStateOf<LabelTarget?>(null) }
 
     val serverId = ui.server?.id.orEmpty()
     // Le reglage est garde sous le nom du conteneur, pas sous son identifiant :
@@ -113,6 +117,22 @@ fun StacksScreen(
     }
     val isFavorite: (Int, String) -> Boolean = { envId, name ->
         portPinKey(serverId, envId, name) in ui.favoriteContainers
+    }
+    val labelOf: (LabelKind, Int, String) -> CustomLabel? = { kind, envId, name ->
+        ui.labelOf(kind, envId, name)
+    }
+
+    labelTarget?.let { target ->
+        LabelDialog(
+            officialName = target.name,
+            kindLabel = if (target.kind == LabelKind.STACK) "Stack" else "Conteneur",
+            current = ui.labelOf(target.kind, target.envId, target.name),
+            onDismiss = { labelTarget = null },
+            onSave = { label ->
+                viewModel.setLabel(target.kind, target.envId, target.name, label)
+                labelTarget = null
+            },
+        )
     }
 
     pinTarget?.let { target ->
@@ -277,6 +297,10 @@ fun StacksScreen(
                             busy = ui.busy,
                             pinnedOf = pinnedOf,
                             isFavorite = isFavorite,
+                            labelOf = labelOf,
+                            onRename = { envId, name ->
+                                labelTarget = LabelTarget(LabelKind.CONTAINER, envId, name)
+                            },
                             onView = viewModel::setFavoritesView,
                             onRemove = viewModel::removeFavoriteContainer,
                             onPin = { envId, container -> pinTarget = PinTarget(envId, container) },
@@ -300,6 +324,10 @@ fun StacksScreen(
                             busy = ui.busy,
                             pinnedOf = pinnedOf,
                             isFavorite = isFavorite,
+                            labelOf = labelOf,
+                            onRename = { envId, name ->
+                                labelTarget = LabelTarget(LabelKind.CONTAINER, envId, name)
+                            },
                             onToggleFavorite = { envId, name ->
                                 viewModel.toggleFavoriteContainer(envId, name)
                             },
@@ -354,6 +382,21 @@ fun StacksScreen(
                                     busy = ui.busy,
                                     pinnedOf = pinnedOf,
                                     isFavorite = isFavorite,
+                                    label = labelOf(LabelKind.STACK, stack.envId, stack.name),
+                                    labelOfContainer = { name ->
+                                        labelOf(LabelKind.CONTAINER, stack.envId, name)
+                                    },
+                                    onRename = {
+                                        labelTarget =
+                                            LabelTarget(LabelKind.STACK, stack.envId, stack.name)
+                                    },
+                                    onRenameContainer = { container ->
+                                        labelTarget = LabelTarget(
+                                            LabelKind.CONTAINER,
+                                            stack.envId,
+                                            container.name,
+                                        )
+                                    },
                                     onToggleContainerFavorite = { container ->
                                         viewModel.toggleFavoriteContainer(stack.envId, container.name)
                                     },
@@ -410,10 +453,12 @@ private fun ContainersGrid(
     busy: Set<String>,
     pinnedOf: (Int, String) -> Set<Int>,
     isFavorite: (Int, String) -> Boolean,
+    labelOf: (LabelKind, Int, String) -> CustomLabel?,
     onAction: (ContainerEntry, StackAction) -> Unit,
     onOpenLogs: (ContainerEntry) -> Unit,
     onPin: (ContainerEntry) -> Unit,
     onToggleFavorite: (Int, String) -> Unit,
+    onRename: (Int, String) -> Unit,
 ) {
     if (entries.isEmpty()) {
         Text(
@@ -438,10 +483,13 @@ private fun ContainersGrid(
                 busy = entry.container.id in busy,
                 pinned = pinnedOf(entry.envId, entry.container.name),
                 favorite = isFavorite(entry.envId, entry.container.name),
+                label = labelOf(LabelKind.CONTAINER, entry.envId, entry.container.name),
+                stackLabel = labelOf(LabelKind.STACK, entry.envId, entry.stack.name),
                 onAction = { action -> onAction(entry, action) },
                 onOpenLogs = { onOpenLogs(entry) },
                 onPin = { onPin(entry) },
                 onToggleFavorite = { onToggleFavorite(entry.envId, entry.container.name) },
+                onRename = { onRename(entry.envId, entry.container.name) },
             )
         }
     }
@@ -453,10 +501,13 @@ internal fun ContainerCard(
     busy: Boolean,
     pinned: Set<Int>,
     favorite: Boolean,
+    label: CustomLabel?,
+    stackLabel: CustomLabel?,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
     onPin: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
 ) {
     val container = entry.container
 
@@ -467,11 +518,9 @@ internal fun ContainerCard(
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    container.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                TitleBlock(
+                    official = container.name,
+                    label = label,
                     modifier = Modifier.weight(1f),
                 )
                 StateChip(
@@ -490,6 +539,8 @@ internal fun ContainerCard(
                 modifier = Modifier.padding(top = 4.dp),
             )
 
+            Description(label)
+
             PortRow(
                 ports = container.ports,
                 linkHost = entry.linkHost,
@@ -505,7 +556,10 @@ internal fun ContainerCard(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        entry.stack.name,
+                        // Le stack d'origine porte lui aussi son nom choisi :
+                        // afficher les deux noms differemment sur le meme ecran
+                        // donnerait l'impression de deux stacks distincts.
+                        stackLabel?.name?.takeIf { it.isNotBlank() } ?: entry.stack.name,
                         style = MaterialTheme.typography.labelMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -523,7 +577,7 @@ internal fun ContainerCard(
                     Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
                 }
 
-                ContainerMenu(container.name, favorite, onPin, onToggleFavorite)
+                ContainerMenu(container.name, favorite, onPin, onToggleFavorite, onRename)
 
                 if (busy) {
                     Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -634,6 +688,8 @@ private fun StackCard(
     busy: Set<String>,
     pinnedOf: (Int, String) -> Set<Int>,
     isFavorite: (Int, String) -> Boolean,
+    label: CustomLabel?,
+    labelOfContainer: (String) -> CustomLabel?,
     favorite: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
@@ -643,6 +699,8 @@ private fun StackCard(
     onOpenLogs: (ContainerView) -> Unit,
     onPin: (ContainerView) -> Unit,
     onToggleContainerFavorite: (ContainerView) -> Unit,
+    onRename: () -> Unit,
+    onRenameContainer: (ContainerView) -> Unit,
 ) {
     val working = stack.key in busy
     var menuOpen by remember { mutableStateOf(false) }
@@ -654,11 +712,9 @@ private fun StackCard(
         Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stack.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                TitleBlock(
+                    official = stack.name,
+                    label = label,
                     modifier = Modifier.weight(1f),
                 )
                 StateChip(stack.runState, stack.runningCount, stack.containers.size)
@@ -729,6 +785,19 @@ private fun StackCard(
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
+                                text = { Text("Renommer…") },
+                                onClick = {
+                                    menuOpen = false
+                                    onRename()
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.DriveFileRenameOutline,
+                                        contentDescription = null,
+                                    )
+                                },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Relancer") },
                                 onClick = {
                                     menuOpen = false
@@ -766,6 +835,8 @@ private fun StackCard(
                 }
             }
 
+            Description(label)
+
             // Tous les ports du stack, dedupliques : la question posee a ce
             // niveau est « par ou j'y accede », pas « quel conteneur les porte ».
             PortRow(
@@ -794,10 +865,12 @@ private fun StackCard(
                         busy = container.id in busy,
                         pinned = pinnedOf(stack.envId, container.name),
                         favorite = isFavorite(stack.envId, container.name),
+                        label = labelOfContainer(container.name),
                         onAction = { action -> onContainerAction(container, action) },
                         onOpenLogs = { onOpenLogs(container) },
                         onPin = { onPin(container) },
                         onToggleFavorite = { onToggleContainerFavorite(container) },
+                        onRename = { onRenameContainer(container) },
                     )
                 }
             }
@@ -812,10 +885,12 @@ private fun ContainerRow(
     busy: Boolean,
     pinned: Set<Int>,
     favorite: Boolean,
+    label: CustomLabel?,
     onAction: (StackAction) -> Unit,
     onOpenLogs: () -> Unit,
     onPin: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
@@ -823,13 +898,17 @@ private fun ContainerRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(
-                container.name,
+                label?.name?.takeIf { it.isNotBlank() } ?: container.name,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                container.statusText.ifBlank { container.state },
+                // Le nom officiel se glisse dans la ligne d'etat plutot que sur
+                // une ligne a lui : la rangee porte deja trois niveaux de texte.
+                label?.name?.takeIf { it.isNotBlank() }
+                    ?.let { "${container.name} · ${container.statusText.ifBlank { container.state }}" }
+                    ?: container.statusText.ifBlank { container.state },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -848,7 +927,7 @@ private fun ContainerRow(
             Icon(Icons.Default.Article, contentDescription = "Logs de ${container.name}")
         }
 
-        ContainerMenu(container.name, favorite, onPin, onToggleFavorite)
+        ContainerMenu(container.name, favorite, onPin, onToggleFavorite, onRename)
 
         if (busy) {
             Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -879,6 +958,7 @@ private fun ContainerMenu(
     favorite: Boolean,
     onPin: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onRename: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
 
@@ -904,6 +984,16 @@ private fun ContainerMenu(
                 },
             )
             DropdownMenuItem(
+                text = { Text("Renommer…") },
+                onClick = {
+                    open = false
+                    onRename()
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.DriveFileRenameOutline, contentDescription = null)
+                },
+            )
+            DropdownMenuItem(
                 text = { Text("Port du raccourci…") },
                 onClick = {
                     open = false
@@ -917,3 +1007,54 @@ private fun ContainerMenu(
 
 /** Le conteneur dont on regle le port de raccourci. */
 private data class PinTarget(val envId: Int, val container: ContainerView)
+
+/** Le conteneur ou le stack dont on modifie le nom personnalise. */
+private data class LabelTarget(val kind: LabelKind, val envId: Int, val name: String)
+
+/**
+ * Le nom affiche, et sous lui le nom officiel quand ils different.
+ *
+ * Le nom officiel n'est jamais cache : c'est celui qu'on tape dans un compose
+ * et qu'on lit dans un log. Sans lui, un nom personnalise couperait la carte de
+ * ce qu'elle designe.
+ */
+@Composable
+internal fun TitleBlock(
+    official: String,
+    label: CustomLabel?,
+    modifier: Modifier = Modifier,
+) {
+    val custom = label?.name?.takeIf { it.isNotBlank() }
+
+    Column(modifier) {
+        Text(
+            custom ?: official,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (custom != null) {
+            Text(
+                official,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** La description personnalisee. Vue detaillee seulement : les tuiles n'en ont pas la place. */
+@Composable
+internal fun Description(label: CustomLabel?) {
+    val text = label?.description?.takeIf { it.isNotBlank() } ?: return
+    Text(
+        text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.padding(top = 4.dp),
+    )
+}

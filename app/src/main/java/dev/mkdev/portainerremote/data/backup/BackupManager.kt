@@ -71,6 +71,7 @@ class BackupManager(
             pinnedPorts = prefsStore.currentPinnedPorts(),
             favoriteContainers = prefsStore.currentFavoriteContainers().toList(),
             favoritesView = prefsStore.favoritesView(),
+            labels = prefsStore.currentCustomLabels(),
         )
     }
 
@@ -124,6 +125,7 @@ class BackupManager(
 
             prefsStore.addPinnedPorts(payload.pinnedPorts)
             prefsStore.addFavoriteContainers(payload.favoriteContainers)
+            prefsStore.addCustomLabels(payload.labels)
             if (payload.favoritesView.isNotBlank()) {
                 prefsStore.setFavoritesView(payload.favoritesView)
             }

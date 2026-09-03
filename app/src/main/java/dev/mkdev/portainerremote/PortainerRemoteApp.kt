@@ -21,10 +21,11 @@ class AppContainer(context: Context) {
     val serverStore = ServerStore(appContext)
     val favoritesStore = FavoritesStore(appContext)
     val repository = PortainerRepository(serverStore)
-    val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository)
+
     val updateChecker = UpdateChecker()
     val updateManager = UpdateManager(appContext)
     val prefsStore = PrefsStore(appContext)
+    val widgetSync = WidgetSync(appContext, serverStore, favoritesStore, repository, prefsStore)
     val backupManager = BackupManager(appContext, serverStore, favoritesStore, prefsStore)
     val updateNotifier = UpdateNotifier(appContext, prefsStore)
 }

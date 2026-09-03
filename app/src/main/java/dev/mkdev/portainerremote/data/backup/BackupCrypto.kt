@@ -1,6 +1,7 @@
 package dev.mkdev.portainerremote.data.backup
 
 import android.util.Base64
+import dev.mkdev.portainerremote.data.store.CustomLabel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.security.SecureRandom
@@ -72,6 +73,8 @@ data class BackupPayload(
     val favoriteContainers: List<String> = emptyList(),
     /** Mode d'affichage de l'onglet Favoris. Vide : laisser le defaut. */
     val favoritesView: String = "",
+    /** Noms et descriptions personnalises, par clef typee. */
+    val labels: Map<String, CustomLabel> = emptyMap(),
 )
 
 class WrongPassphraseException : Exception("Phrase de passe incorrecte, ou fichier abîmé.")

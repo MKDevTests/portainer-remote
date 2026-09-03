@@ -35,6 +35,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.mkdev.portainerremote.core.WebUi
+import dev.mkdev.portainerremote.data.store.CustomLabel
+import dev.mkdev.portainerremote.data.store.LabelKind
 import dev.mkdev.portainerremote.domain.ContainerView
 import dev.mkdev.portainerremote.domain.FavoritesView
 import dev.mkdev.portainerremote.domain.StackAction
@@ -59,7 +61,9 @@ internal fun FavoritesBody(
     busy: Set<String>,
     pinnedOf: (Int, String) -> Set<Int>,
     isFavorite: (Int, String) -> Boolean,
+    labelOf: (LabelKind, Int, String) -> CustomLabel?,
     onView: (FavoritesView) -> Unit,
+    onRename: (Int, String) -> Unit,
     onRemove: (String) -> Unit,
     onPin: (Int, ContainerView) -> Unit,
     onToggleFavorite: (Int, String) -> Unit,
@@ -105,11 +109,16 @@ internal fun FavoritesBody(
             items(favorites, key = { it.key }) { favorite ->
                 val entry = favorite.entry
                 when {
-                    entry == null -> GhostTile(favorite.name) { onRemove(favorite.key) }
+                    entry == null -> GhostTile(
+                        name = labelOf(LabelKind.CONTAINER, favorite.envId, favorite.name)?.name
+                            ?.takeIf { it.isNotBlank() } ?: favorite.name,
+                        onRemove = { onRemove(favorite.key) },
+                    )
 
                     view == FavoritesView.SHORTCUTS -> ShortcutTile(
                         entry = entry,
                         pinned = pinnedOf(entry.envId, entry.container.name),
+                        label = labelOf(LabelKind.CONTAINER, entry.envId, entry.container.name),
                         onRemove = { onRemove(favorite.key) },
                         onPin = { onPin(entry.envId, entry.container) },
                     )
@@ -119,12 +128,15 @@ internal fun FavoritesBody(
                         busy = entry.container.id in busy,
                         pinned = pinnedOf(entry.envId, entry.container.name),
                         favorite = isFavorite(entry.envId, entry.container.name),
+                        label = labelOf(LabelKind.CONTAINER, entry.envId, entry.container.name),
+                        stackLabel = labelOf(LabelKind.STACK, entry.envId, entry.stack.name),
                         onAction = { action -> onAction(entry, action) },
                         onOpenLogs = { onOpenLogs(entry) },
                         onPin = { onPin(entry.envId, entry.container) },
                         onToggleFavorite = {
                             onToggleFavorite(entry.envId, entry.container.name)
                         },
+                        onRename = { onRename(entry.envId, entry.container.name) },
                     )
                 }
             }
@@ -146,6 +158,7 @@ internal fun FavoritesBody(
 private fun ShortcutTile(
     entry: ContainerEntry,
     pinned: Set<Int>,
+    label: CustomLabel?,
     onRemove: () -> Unit,
     onPin: () -> Unit,
 ) {
@@ -180,7 +193,7 @@ private fun ShortcutTile(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    container.name,
+                    label?.name?.takeIf { it.isNotBlank() } ?: container.name,
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

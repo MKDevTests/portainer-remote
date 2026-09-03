@@ -8,6 +8,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 private val Context.prefsDataStore by preferencesDataStore(name = "portainer_prefs")
@@ -36,6 +37,42 @@ fun envIdOfKey(key: String): Int = key.split('|', limit = 3).getOrNull(1)?.toInt
 
 fun serverIdOfKey(key: String): String = key.substringBefore('|')
 
+/**
+ * Ce qu'un nom personnalise designe. Le type fait partie de la clef, et ce
+ * n'est pas une precaution theorique : sur l'instance mesuree, 17 des 31 stacks
+ * portent aussi le nom d'un conteneur. Sans lui, renommer le stack « komga »
+ * renommerait le conteneur « komga ».
+ */
+enum class LabelKind(val prefix: String) {
+    STACK("stack"),
+    CONTAINER("conteneur"),
+}
+
+/**
+ * Clef d'un nom personnalise.
+ *
+ * Fondee sur le nom et non sur l'identifiant, pour les memes raisons que
+ * [portPinKey] — et pour les stacks il y a pire qu'un redeploiement : un stack
+ * bascule de « managed:12 » a « derived:3:komga » des que /api/stacks cesse de
+ * le voir, ce qui arrive pour neuf stacks sur trente et un.
+ */
+fun labelKey(kind: LabelKind, serverId: String, envId: Int, name: String): String =
+    "${kind.prefix}|$serverId|$envId|$name"
+
+/**
+ * Un nom et une description choisis par l'utilisateur.
+ *
+ * Le nom officiel n'est jamais remplace : il reste affiche en second, parce
+ * que c'est lui qu'on tape dans un compose et qu'on lit dans un log.
+ */
+@Serializable
+data class CustomLabel(
+    val name: String = "",
+    val description: String = "",
+) {
+    val empty: Boolean get() = name.isBlank() && description.isBlank()
+}
+
 /** Petits reglages qui n'appartiennent ni aux serveurs ni aux favoris. */
 class PrefsStore(context: Context) {
 
@@ -45,6 +82,7 @@ class PrefsStore(context: Context) {
     private val pinnedPortsKey = stringPreferencesKey("pinned_ports_json")
     private val favoriteContainersKey = stringPreferencesKey("favorite_containers_json")
     private val favoritesViewKey = stringPreferencesKey("favorites_view")
+    private val labelsKey = stringPreferencesKey("custom_labels_json")
     private val json = Json { ignoreUnknownKeys = true }
 
     /**
@@ -131,6 +169,36 @@ class PrefsStore(context: Context) {
     suspend fun setFavoritesView(mode: String) {
         appContext.prefsDataStore.edit { it[favoritesViewKey] = mode }
     }
+
+    /** Noms et descriptions personnalises, par clef typee. */
+    val customLabels: Flow<Map<String, CustomLabel>> =
+        appContext.prefsDataStore.data.map { decodeLabels(it[labelsKey]) }
+
+    suspend fun currentCustomLabels(): Map<String, CustomLabel> =
+        decodeLabels(appContext.prefsDataStore.data.first()[labelsKey])
+
+    /** Un libelle vide efface l'entree : c'est ainsi qu'on revient au nom officiel. */
+    suspend fun setCustomLabel(key: String, label: CustomLabel?) {
+        appContext.prefsDataStore.edit { prefs ->
+            val labels = decodeLabels(prefs[labelsKey]).toMutableMap()
+            if (label == null || label.empty) labels.remove(key) else labels[key] = label
+            prefs[labelsKey] = json.encodeToString(labels.toMap())
+        }
+    }
+
+    /** Fusionne sans rien retirer, pour la restauration d'une sauvegarde. */
+    suspend fun addCustomLabels(labels: Map<String, CustomLabel>) {
+        if (labels.isEmpty()) return
+        appContext.prefsDataStore.edit { prefs ->
+            prefs[labelsKey] = json.encodeToString(decodeLabels(prefs[labelsKey]) + labels)
+        }
+    }
+
+    private fun decodeLabels(raw: String?): Map<String, CustomLabel> =
+        if (raw.isNullOrBlank()) emptyMap()
+        else runCatching {
+            json.decodeFromString<Map<String, CustomLabel>>(raw)
+        }.getOrDefault(emptyMap())
 
     private fun decodeKeys(raw: String?): Set<String> =
         if (raw.isNullOrBlank()) emptySet()

@@ -4,6 +4,9 @@ import android.content.Context
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.data.store.FavoriteStack
 import dev.mkdev.portainerremote.data.store.FavoritesStore
+import dev.mkdev.portainerremote.data.store.LabelKind
+import dev.mkdev.portainerremote.data.store.PrefsStore
+import dev.mkdev.portainerremote.data.store.labelKey
 import dev.mkdev.portainerremote.data.store.ServerStore
 import dev.mkdev.portainerremote.data.store.WidgetEntry
 import dev.mkdev.portainerremote.data.store.WidgetSnapshot
@@ -22,6 +25,7 @@ class WidgetSync(
     private val serverStore: ServerStore,
     private val favorites: FavoritesStore,
     private val repository: PortainerRepository,
+    private val prefs: PrefsStore,
 ) {
 
     /** Retrouve un stack favori dans l'etat courant du serveur. */
@@ -47,6 +51,10 @@ class WidgetSync(
         }
 
         val previous = favorites.snapshot().entries.associateBy { it.serverId to it.stackKey }
+        // Le widget montre le nom que l'utilisateur a choisi. L'instantane est
+        // sa seule source : il ne peut rien resoudre lui-meme au moment de se
+        // dessiner, il n'a que quelques millisecondes de vie.
+        val labels = prefs.currentCustomLabels()
         var anyFailure = false
 
         val entries = pinned.groupBy { it.serverId }.flatMap { (serverId, group) ->
@@ -69,7 +77,9 @@ class WidgetSync(
                 WidgetEntry(
                     serverId = favorite.serverId,
                     stackKey = favorite.stackKey,
-                    name = favorite.name,
+                    name = labels[
+                        labelKey(LabelKind.STACK, favorite.serverId, favorite.envId, favorite.name),
+                    ]?.name?.takeIf { it.isNotBlank() } ?: favorite.name,
                     serverLabel = favorite.serverLabel,
                     state = fresh?.runState?.name
                         ?: previous[favorite.serverId to favorite.stackKey]?.state

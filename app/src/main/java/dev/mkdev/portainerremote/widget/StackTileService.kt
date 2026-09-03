@@ -76,7 +76,9 @@ class StackTileService : TileService() {
                 tile.subtitle = "aucun favori"
                 tile.state = Tile.STATE_UNAVAILABLE
             } else {
-                tile.label = favorite.name
+                // L'instantane porte deja le nom personnalise ; le favori ne
+                // connait que le nom officiel, qui sert de repli.
+                tile.label = entry.second?.name?.takeIf { it.isNotBlank() } ?: favorite.name
                 tile.subtitle = when (state) {
                     "RUNNING" -> "en marche · relancer"
                     "PARTIAL" -> "partiel · relancer"

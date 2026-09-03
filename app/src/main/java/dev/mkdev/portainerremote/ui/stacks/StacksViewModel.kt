@@ -10,7 +10,10 @@ import dev.mkdev.portainerremote.data.store.FavoriteStack
 import dev.mkdev.portainerremote.data.store.FavoritesStore
 import dev.mkdev.portainerremote.data.store.PrefsStore
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.data.store.CustomLabel
+import dev.mkdev.portainerremote.data.store.LabelKind
 import dev.mkdev.portainerremote.data.store.containerNameOfKey
+import dev.mkdev.portainerremote.data.store.labelKey
 import dev.mkdev.portainerremote.data.store.envIdOfKey
 import dev.mkdev.portainerremote.data.store.portPinKey
 import dev.mkdev.portainerremote.data.store.serverIdOfKey
@@ -89,7 +92,29 @@ data class StacksUi(
     /** Clefs des conteneurs favoris, tous serveurs confondus. */
     val favoriteContainers: Set<String> = emptySet(),
     val favoritesView: FavoritesView = FavoritesView.SHORTCUTS,
+    /** Noms et descriptions personnalises, par clef typee. */
+    val labels: Map<String, CustomLabel> = emptyMap(),
 ) {
+
+    fun labelOf(kind: LabelKind, envId: Int, name: String): CustomLabel? {
+        val id = server?.id ?: return null
+        return labels[labelKey(kind, id, envId, name)]
+    }
+
+    /**
+     * Le nom a afficher : celui de l'utilisateur s'il en a choisi un, sinon le
+     * nom officiel. Ce meme titre sert au tri et a la recherche, sans quoi la
+     * liste paraitrait desordonnee et le nom choisi introuvable.
+     */
+    fun titleOf(kind: LabelKind, envId: Int, name: String): String =
+        labelOf(kind, envId, name)?.name?.takeIf { it.isNotBlank() } ?: name
+
+    private fun matches(kind: LabelKind, envId: Int, name: String, needle: String): Boolean {
+        if (name.lowercase().contains(needle)) return true
+        val label = labelOf(kind, envId, name) ?: return false
+        return label.name.lowercase().contains(needle) ||
+            label.description.lowercase().contains(needle)
+    }
     /**
      * Recherche, filtre et tri appliqués à l'affichage seulement : les données
      * brutes restent intactes, si bien qu'effacer la recherche ne coûte pas un
@@ -98,12 +123,15 @@ data class StacksUi(
     val visibleGroups: List<EnvGroup>
         get() {
             val needle = query.trim().lowercase()
+            fun title(stack: StackView) =
+                titleOf(LabelKind.STACK, stack.envId, stack.name).lowercase()
+
             val comparator = when (sort) {
-                StackSort.NAME_ASC -> compareBy<StackView> { it.name.lowercase() }
-                StackSort.NAME_DESC -> compareByDescending<StackView> { it.name.lowercase() }
+                StackSort.NAME_ASC -> compareBy<StackView> { title(it) }
+                StackSort.NAME_DESC -> compareByDescending<StackView> { title(it) }
                 // En marche d'abord, puis partiels, puis arrêtés.
                 StackSort.STATE -> compareBy<StackView> { it.runState.ordinal }
-                    .thenBy { it.name.lowercase() }
+                    .thenBy { title(it) }
             }
 
             return groups.map { group ->
@@ -111,10 +139,12 @@ data class StacksUi(
                     stacks = group.stacks
                         .filter { stack ->
                             val matchesQuery = needle.isEmpty() ||
-                                stack.name.lowercase().contains(needle) ||
+                                matches(LabelKind.STACK, stack.envId, stack.name, needle) ||
                                 // La recherche porte aussi sur les conteneurs :
                                 // on cherche souvent un service, pas un stack.
-                                stack.containers.any { it.name.lowercase().contains(needle) }
+                                stack.containers.any {
+                                    matches(LabelKind.CONTAINER, stack.envId, it.name, needle)
+                                }
 
                             val matchesFilter = when (filter) {
                                 StackFilter.ALL -> true
@@ -137,12 +167,14 @@ data class StacksUi(
     val visibleContainers: List<ContainerEntry>
         get() {
             val needle = query.trim().lowercase()
+            fun title(entry: ContainerEntry) =
+                titleOf(LabelKind.CONTAINER, entry.envId, entry.container.name).lowercase()
+
             val comparator = when (sort) {
-                StackSort.NAME_ASC -> compareBy<ContainerEntry> { it.container.name.lowercase() }
-                StackSort.NAME_DESC ->
-                    compareByDescending<ContainerEntry> { it.container.name.lowercase() }
+                StackSort.NAME_ASC -> compareBy<ContainerEntry> { title(it) }
+                StackSort.NAME_DESC -> compareByDescending<ContainerEntry> { title(it) }
                 StackSort.STATE -> compareBy<ContainerEntry> { if (it.container.running) 0 else 1 }
-                    .thenBy { it.container.name.lowercase() }
+                    .thenBy { title(it) }
             }
 
             return groups
@@ -155,9 +187,9 @@ data class StacksUi(
                 }
                 .filter { entry ->
                     val matchesQuery = needle.isEmpty() ||
-                        entry.container.name.lowercase().contains(needle) ||
+                        matches(LabelKind.CONTAINER, entry.envId, entry.container.name, needle) ||
                         entry.container.image.lowercase().contains(needle) ||
-                        entry.stack.name.lowercase().contains(needle)
+                        matches(LabelKind.STACK, entry.envId, entry.stack.name, needle)
 
                     val matchesFilter = when (filter) {
                         StackFilter.ALL -> true
@@ -201,9 +233,11 @@ data class StacksUi(
                 // Un favori absent des donnees brutes est un fantome ; un favori
                 // present mais ecarte par le filtre courant se cache normalement.
                 .filter { it.entry != null || it.name !in all }
-                .filter { needle.isEmpty() || it.name.lowercase().contains(needle) }
+                .filter {
+                    needle.isEmpty() || matches(LabelKind.CONTAINER, it.envId, it.name, needle)
+                }
                 .filter { it.entry != null || filter == StackFilter.ALL }
-                .sortedBy { it.name.lowercase() }
+                .sortedBy { titleOf(LabelKind.CONTAINER, it.envId, it.name).lowercase() }
         }
 
     val filtering: Boolean get() = query.isNotBlank() || filter != StackFilter.ALL
@@ -246,6 +280,7 @@ class StacksViewModel(
                 .toSet()
             val pins = prefsStore.currentPinnedPorts()
             val favoriteContainers = prefsStore.currentFavoriteContainers()
+            val customLabels = prefsStore.currentCustomLabels()
             val view = FavoritesView.entries
                 .firstOrNull { it.name == prefsStore.favoritesView() }
                 ?: FavoritesView.SHORTCUTS
@@ -261,6 +296,7 @@ class StacksViewModel(
                         pinnedPorts = pins,
                         favoriteContainers = favoriteContainers,
                         favoritesView = view,
+                        labels = customLabels,
                     )
                 }
                 else -> _ui.update {
@@ -272,9 +308,35 @@ class StacksViewModel(
                         pinnedPorts = pins,
                         favoriteContainers = favoriteContainers,
                         favoritesView = view,
+                        labels = customLabels,
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * Enregistre - ou efface, avec un libelle vide - le nom et la description
+     * d'un stack ou d'un conteneur.
+     *
+     * Un changement de nom de stack touche le widget : son instantane porte le
+     * nom affiche, et il ne peut rien resoudre au moment de se dessiner.
+     */
+    fun setLabel(kind: LabelKind, envId: Int, name: String, label: CustomLabel) {
+        viewModelScope.launch {
+            val key = labelKey(kind, serverId, envId, name)
+            prefsStore.setCustomLabel(key, label)
+            _ui.update {
+                it.copy(
+                    labels = if (label.empty) it.labels - key else it.labels + (key to label),
+                    message = if (label.empty) {
+                        "Nom personnalisé de $name effacé."
+                    } else {
+                        "$name affiché sous « ${label.name.ifBlank { name }} »."
+                    },
+                )
+            }
+            if (kind == LabelKind.STACK) widgetSync.refresh()
         }
     }
 

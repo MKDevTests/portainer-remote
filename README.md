@@ -32,6 +32,7 @@ en géométrie téléphone et en géométrie tablette.
 | Ports publiés et raccourci vers l'interface web | fait |
 | Choix manuel du port de raccourci | fait |
 | Onglet Favoris, en raccourcis ou en détaillé | fait |
+| Noms personnalisés et descriptions | fait |
 
 ### Mises à jour
 
@@ -139,6 +140,34 @@ Le protocole, lui, est deviné : `https` sur 443, 8443 et 9443, `http` ailleurs.
 La liste est courte à dessein — deviner `https` à tort donne une erreur de
 certificat illisible, deviner `http` à tort donne une redirection que le
 navigateur suit tout seul.
+
+### Noms personnalisés
+
+Le menu d'un stack ou d'un conteneur ouvre **Renommer…** : un nom à soi et une
+courte description. Le nom officiel n'est jamais remplacé — il reste affiché
+sous le nom choisi, parce que c'est lui qu'on tape dans un compose et qu'on lit
+dans un log. La description n'apparaît que dans les vues détaillées ; les
+tuiles de raccourci n'en ont pas la place.
+
+**La clé porte le type**, et ce n'est pas une précaution théorique : sur
+l'instance mesurée, **17 des 31 stacks portent aussi le nom d'un conteneur**
+(`komga`, `calibre-web`, `komf`…). Sans le type dans la clé, renommer le stack
+`komga` renommerait le conteneur `komga`.
+
+Elle porte aussi le **nom** et non l'identifiant. Pour un conteneur, c'est un
+`compose up` qui change l'identifiant ; pour un stack, c'est pire : il bascule
+de `managed:12` à `derived:3:komga` dès que `/api/stacks` cesse de le voir, ce
+qui concerne neuf stacks sur trente et un.
+
+Trois conséquences qu'il aurait été facile de manquer :
+
+- **La recherche porte sur les deux noms et sur la description.** Un nom
+  personnalisé introuvable à la recherche serait un nom perdu.
+- **Le tri suit le nom affiché.** Trier sur le nom officiel donnerait une liste
+  qui paraît désordonnée.
+- **Le widget et la tuile affichent le nom choisi.** Ils ne peuvent rien
+  résoudre au moment de se dessiner — quelques millisecondes de vie — donc c'est
+  l'instantané qui porte le nom affiché, et renommer un stack le régénère.
 
 ### Favoris
 
