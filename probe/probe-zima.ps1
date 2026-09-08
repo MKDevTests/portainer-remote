@@ -217,9 +217,28 @@ try {
   # Seules les routes concretes sont interrogees : ni parametre de chemin, ni
   # verbe autre que GET. Une route qui repond 405 est simplement notee.
   $concrete = $sorted | Where-Object { $_ -notmatch '[\{\$:]' -and $_.Length -gt 6 }
+
+  # Une base ne repond a aucune question. Les inconnues de l'etude tiennent dans
+  # des chemins complets, que la phase 1 ne reconstitue pas : les clients generes
+  # concatenent une base et un chemin relatif, si bien qu'aucun des deux ne
+  # figure entier dans le JavaScript. On les nomme donc ici, une fois.
+  $questions = @(
+    '/v2/app_management/apps/upgradable',
+    '/v2/app_management/compose',
+    '/v2/app_management/installed/list',
+    '/v2/app_management/web/appgrid',
+    '/v2/app_management/system/df',
+    '/v2/zimaos/scheduledoff',
+    '/v2/zimaos/device/info',
+    '/v2/local_storage/disk/sleep',
+    '/v1/sys/utilization',
+    '/v1/sys/hardware'
+  )
+
+  $targets = @($concrete) + @($questions) | Select-Object -Unique
   $report = @()
 
-  foreach ($path in $concrete) {
+  foreach ($path in $targets) {
     try {
       $r = Invoke-RestMethod -Uri "$BaseUrl$path" -Headers $header -Method Get -TimeoutSec 10
       $json = $r | ConvertTo-Json -Depth 6
