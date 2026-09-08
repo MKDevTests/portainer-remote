@@ -309,14 +309,7 @@ private fun UsageCard(usage: HostUsage) {
             }
             Gauge("Processeur", usage.cpuPercent)
             Gauge("Mémoire", usage.memoryPercent)
-            Gauge("Disque", usage.diskPercent)
-            if (usage.uptimeSeconds > 0) {
-                Text(
-                    "Allumé depuis " + humanUptime(usage.uptimeSeconds),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Gauge("Disque système", usage.diskPercent)
         }
     }
 }
@@ -333,17 +326,6 @@ private fun Gauge(label: String, percent: Int) {
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
-    }
-}
-
-private fun humanUptime(seconds: Long): String {
-    val days = seconds / 86_400
-    val hours = (seconds % 86_400) / 3_600
-    val minutes = (seconds % 3_600) / 60
-    return when {
-        days > 0 -> "$days j $hours h"
-        hours > 0 -> "$hours h $minutes min"
-        else -> "$minutes min"
     }
 }
 
@@ -462,11 +444,14 @@ private fun ScheduleCard(schedule: ScheduledOff) {
         Column(Modifier.padding(16.dp)) {
             Text("Extinction programmée", style = MaterialTheme.typography.titleMedium)
             Text(
-                if (!schedule.enabled) {
+                if (!schedule.active) {
                     "Désactivée sur l'hôte."
                 } else {
-                    val days = schedule.weekdays.joinToString(", ").ifBlank { "tous les jours" }
-                    "%02d:%02d · %s".format(schedule.hour, schedule.minute, days)
+                    "%02d:%02d · %s".format(
+                        schedule.hour,
+                        schedule.minute,
+                        schedule.weekdays.joinToString(", "),
+                    )
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

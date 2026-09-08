@@ -241,20 +241,27 @@ class ZimaClient(
     // --------------------------------------------------------- applications
 
     /**
-     * Les applications que ZimaOS gere lui-meme. Sur ce NAS, Portainer en fait
-     * partie : c'est ce qui permet de le relancer quand il est arrete, donc
-     * quand le reste de l'app ne repond plus.
+     * Les applications que ZimaOS gere lui-meme. Sur un tel NAS, Portainer en
+     * fait partie : c'est ce qui permet de le relancer quand il est arrete,
+     * donc quand le reste de l'app ne repond plus.
+     *
+     * On lit /installed/list et non /compose, bien que les deux portent l'etat.
+     * /compose renvoie les fichiers compose complets - donc les blocs
+     * environment, donc des mots de passe et des cles d'API en clair, pour
+     * afficher un point vert. Une application n'a pas a telecharger ce dont
+     * elle n'a pas besoin, et cela vaut d'abord pour les secrets des autres.
      */
     suspend fun apps(): ApiResult<List<HostApp>> = attempt {
-        val response = call(HttpMethod.Get, "/v2/app_management/compose")
+        val response = call(HttpMethod.Get, "/v2/app_management/installed/list")
         if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
         val body = parse(response.bodyAsText()) ?: return@attempt ApiResult.Ok(emptyList())
         ApiResult.Ok(readApps(body))
     }
 
     /**
-     * La liste arrive tantot en tableau, tantot en dictionnaire indexe par
-     * identifiant, selon la version. Les deux formes disent la meme chose.
+     * La liste arrive en tableau sur ZimaOS, et en dictionnaire indexe par
+     * identifiant sur des versions plus anciennes. Les deux disent la meme
+     * chose : on accepte les deux plutot que de coder un numero de version.
      */
     private fun readApps(body: JsonElement): List<HostApp> {
         val data = (body as? JsonObject)?.get("data") ?: body
@@ -276,11 +283,25 @@ class ZimaClient(
                 val status = obj.string("status") ?: obj.string("state") ?: ""
                 HostApp(
                     id = id,
-                    name = obj.string("title") ?: obj.string("name") ?: id,
+                    name = obj.title() ?: id,
                     running = status.equals("running", true) || status.equals("started", true),
                 )
             }
             .sortedBy { it.name.lowercase() }
+    }
+
+    /**
+     * Le nom affichable. ZimaOS garde deja un titre personnalise a cote du
+     * titre d'origine : le preferer, c'est respecter un choix que l'utilisateur
+     * a deja fait ailleurs plutot que lui demander de le refaire ici.
+     */
+    private fun JsonObject.title(): String? {
+        val title = this["title"] as? JsonObject
+        return title?.string("custom")
+            ?: title?.string("en_us")
+            ?: title?.string("en_US")
+            ?: string("title")
+            ?: string("name")
     }
 
     private fun JsonObject.string(key: String): String? =
@@ -313,26 +334,33 @@ class ZimaClient(
             HostUsage(
                 cpuPercent = data.percent("cpu"),
                 memoryPercent = data.percent("mem", "memory"),
-                diskPercent = data.percent("disk", "storage"),
-                uptimeSeconds = (data["uptime"] as? JsonPrimitive)?.doubleOrNull?.toLong() ?: -1L,
+                // Le disque systeme s'appelle sys_disk et compte en used sur
+                // size : viser disk/total, c'est une jauge vide qui ne dit
+                // jamais pourquoi. Les autres noms restent acceptes.
+                diskPercent = data.percent("sys_disk", "disk", "storage"),
             ),
         )
     }
 
     /**
-     * Le taux arrive selon les versions en pourcentage direct, ou en couple
-     * used/total. On accepte les deux : une seule des deux formes ferait
-     * dependre l'affichage d'un numero de version.
+     * Le taux arrive selon les champs en pourcentage direct, ou en couple
+     * consomme sur total. On accepte les deux, et les deux orthographes de
+     * chaque nom : une seule forme ferait dependre l'affichage d'une version.
      */
     private fun JsonObject.percent(vararg keys: String): Int {
         for (key in keys) {
             val node = this[key] ?: continue
             (node as? JsonPrimitive)?.doubleOrNull?.let { return it.toInt().coerceIn(0, 100) }
             val obj = node as? JsonObject ?: continue
-            (obj["percent"] as? JsonPrimitive)?.doubleOrNull
-                ?.let { return it.toInt().coerceIn(0, 100) }
+
+            for (direct in arrayOf("percent", "usedPercent", "used_percent")) {
+                (obj[direct] as? JsonPrimitive)?.doubleOrNull
+                    ?.let { return it.toInt().coerceIn(0, 100) }
+            }
+
             val used = (obj["used"] as? JsonPrimitive)?.doubleOrNull
-            val total = (obj["total"] as? JsonPrimitive)?.doubleOrNull
+            val total = arrayOf("total", "size")
+                .firstNotNullOfOrNull { (obj[it] as? JsonPrimitive)?.doubleOrNull }
             if (used != null && total != null && total > 0) {
                 return ((used / total) * 100).toInt().coerceIn(0, 100)
             }
@@ -348,7 +376,6 @@ class ZimaClient(
         val data = body["data"] as? JsonObject ?: body
         ApiResult.Ok(
             ScheduledOff(
-                enabled = (data["enabled"] as? JsonPrimitive)?.contentOrNull == "true",
                 hour = (data["hour"] as? JsonPrimitive)?.doubleOrNull?.toInt() ?: 0,
                 minute = (data["minute"] as? JsonPrimitive)?.doubleOrNull?.toInt() ?: 0,
                 weekdays = (data["weekdays"] as? JsonArray)

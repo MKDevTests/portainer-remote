@@ -24,23 +24,34 @@ data class HostApp(
     val running: Boolean,
 )
 
-/** Charge de la machine, telle que ZimaOS la mesure lui-meme. */
+/**
+ * Charge de la machine, telle que l'hote la mesure lui-meme.
+ *
+ * Pas de duree d'allumage : l'hote ne la publie pas avec sa charge. L'y chercher
+ * donnait un champ toujours absent, donc une ligne qui ne s'affichait jamais.
+ */
 data class HostUsage(
     val cpuPercent: Int = -1,
     val memoryPercent: Int = -1,
     val diskPercent: Int = -1,
-    val uptimeSeconds: Long = -1,
 ) {
     val known: Boolean get() = cpuPercent >= 0 || memoryPercent >= 0 || diskPercent >= 0
 }
 
-/** L'extinction programmee de ZimaOS. Les jours sont ceux de son API. */
+/**
+ * L'extinction programmee de l'hote.
+ *
+ * Elle n'a pas d'interrupteur : une liste de jours vide *est* l'etat desactive.
+ * Chercher un champ « active » revenait a en inventer un, et a afficher
+ * « desactivee » quelle que soit la realite.
+ */
 data class ScheduledOff(
-    val enabled: Boolean = false,
     val hour: Int = 0,
     val minute: Int = 0,
     val weekdays: List<String> = emptyList(),
-)
+) {
+    val active: Boolean get() = weekdays.isNotEmpty()
+}
 
 /** Ce qu'on peut demander a la machine. Une action, un chemin, rien de plus. */
 enum class HostPower(val state: String, val label: String) {
