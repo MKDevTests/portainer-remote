@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -28,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -197,7 +199,15 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    ui.scheduledOff?.let { item { ScheduleCard(it) } }
+                    ui.scheduledOff?.let { schedule ->
+                        item {
+                            ScheduleCard(
+                                schedule = schedule,
+                                saving = ui.savingSchedule,
+                                onSave = viewModel::saveSchedule,
+                            )
+                        }
+                    }
 
                     item {
                         SectionTitle(
@@ -211,8 +221,10 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                             app = app,
                             isPortainer = app.id == host.portainerAppId,
                             busy = ui.busyApp == app.id,
+                            upgradable = app.id in ui.upgradable,
                             onChoose = { viewModel.choosePortainerApp(app.id) },
                             onAction = { action -> viewModel.appAction(app, action) },
+                            onUpgrade = { viewModel.upgrade(app) },
                         )
                     }
 
@@ -535,39 +547,68 @@ private fun AppRow(
     app: HostApp,
     isPortainer: Boolean,
     busy: Boolean,
+    upgradable: Boolean,
     onChoose: () -> Unit,
     onAction: (HostAppAction) -> Unit,
+    onUpgrade: () -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = isPortainer, onClick = onChoose)
-            Column(Modifier.weight(1f)) {
-                Text(
-                    app.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    if (app.running) "en marche" else "arrêté",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (app.running) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-            if (app.running) {
-                IconButton(onClick = { onAction(HostAppAction.STOP) }, enabled = !busy) {
-                    Icon(Icons.Default.Stop, contentDescription = "Arrêter ${app.name}")
+        Column {
+            Row(
+                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = isPortainer, onClick = onChoose)
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        app.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        if (app.running) "en marche" else "arrêté",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (app.running) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
                 }
-            } else {
-                IconButton(onClick = { onAction(HostAppAction.START) }, enabled = !busy) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Démarrer ${app.name}")
+                // « Relancer » n'a de sens que sur une application en marche :
+                // sur une application arretee, c'est « Demarrer » qu'on veut.
+                if (app.running) {
+                    IconButton(onClick = { onAction(HostAppAction.RESTART) }, enabled = !busy) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = "Relancer ${app.name}")
+                    }
+                    IconButton(onClick = { onAction(HostAppAction.STOP) }, enabled = !busy) {
+                        Icon(Icons.Default.Stop, contentDescription = "Arrêter ${app.name}")
+                    }
+                } else {
+                    IconButton(onClick = { onAction(HostAppAction.START) }, enabled = !busy) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Démarrer ${app.name}")
+                    }
+                }
+            }
+
+            if (upgradable) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 12.dp, bottom = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        "Mise à jour disponible",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    FilledTonalButton(onClick = onUpgrade, enabled = !busy) {
+                        Text("Mettre à jour")
+                    }
                 }
             }
         }
@@ -575,16 +616,46 @@ private fun AppRow(
 }
 
 /**
- * L'extinction programmee est affichee, pas modifiee.
+ * L'extinction programmee, en lecture et en ecriture.
  *
- * Le corps de sa requete est desormais connu, mais l'ecriture n'est pas encore
- * ecrite. Elle se regle donc dans l'interface du NAS, et se lit ici.
+ * Ce qui s'affiche est toujours ce que l'hote annonce, jamais ce qu'on lui a
+ * demande : apres enregistrement, le reglage est relu. Le corps de la requete
+ * est deduit de la forme de la lecture et non d'un contrat publie, donc la
+ * machine reste seule juge de ce qu'elle a compris.
  */
 @Composable
-private fun ScheduleCard(schedule: ScheduledOff) {
+private fun ScheduleCard(
+    schedule: ScheduledOff,
+    saving: Boolean,
+    onSave: (ScheduledOff) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    // La saisie repart de l'etat annonce a chaque fois qu'on ouvre l'edition,
+    // et a chaque fois que l'hote annonce autre chose.
+    var hour by remember(schedule, editing) { mutableStateOf(schedule.hour.toString()) }
+    var minute by remember(schedule, editing) { mutableStateOf("%02d".format(schedule.minute)) }
+    var days by remember(schedule, editing) { mutableStateOf(schedule.weekdays.toSet()) }
+
+    val hourValue = hour.toIntOrNull()
+    val minuteValue = minute.toIntOrNull()
+    val valid = hourValue in 0..23 && minuteValue in 0..59
+
     Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text("Extinction programmée", style = MaterialTheme.typography.titleMedium)
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Extinction programmée",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { editing = !editing }) {
+                    Text(if (editing) "Fermer" else "Modifier")
+                }
+            }
+
             Text(
                 if (!schedule.active) {
                     "Désactivée sur l'hôte."
@@ -592,12 +663,86 @@ private fun ScheduleCard(schedule: ScheduledOff) {
                     "%02d:%02d · %s".format(
                         schedule.hour,
                         schedule.minute,
-                        schedule.weekdays.joinToString(", "),
+                        schedule.weekdays.joinToString(", ") { ScheduledOff.shortLabel(it) },
                     )
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            if (!editing) return@Column
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = hour,
+                    onValueChange = { hour = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Heure") },
+                    singleLine = true,
+                    isError = hourValue !in 0..23,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = minute,
+                    onValueChange = { minute = it.filter(Char::isDigit).take(2) },
+                    label = { Text("Minute") },
+                    singleLine = true,
+                    isError = minuteValue !in 0..59,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                ScheduledOff.WEEK.forEach { code ->
+                    FilterChip(
+                        selected = code in days,
+                        onClick = {
+                            days = if (code in days) days - code else days + code
+                        },
+                        label = { Text(ScheduledOff.shortLabel(code)) },
+                    )
+                }
+            }
+
+            // Ce que la machine fera, en toutes lettres, avant d'appuyer.
+            Text(
+                if (days.isEmpty()) {
+                    "Aucun jour choisi : enregistrer désactivera l'extinction programmée."
+                } else {
+                    "Le NAS s'éteindra à %s:%s, %s.".format(
+                        hour.padStart(2, '0'),
+                        minute.padStart(2, '0'),
+                        ScheduledOff.WEEK.filter { it in days }
+                            .joinToString(", ") { ScheduledOff.shortLabel(it) },
+                    )
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Button(
+                onClick = {
+                    onSave(
+                        ScheduledOff(
+                            hour = hourValue ?: 0,
+                            minute = minuteValue ?: 0,
+                            weekdays = ScheduledOff.WEEK.filter { it in days },
+                        ),
+                    )
+                    editing = false
+                },
+                enabled = valid && !saving,
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text(if (saving) "Enregistrement…" else "Enregistrer")
+            }
         }
     }
 }

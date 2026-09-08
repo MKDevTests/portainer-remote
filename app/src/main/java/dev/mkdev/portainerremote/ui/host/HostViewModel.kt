@@ -33,8 +33,11 @@ data class HostUi(
     /** Vrai quand on saisit un nouveau NAS, meme s'il en existe deja. */
     val adding: Boolean = false,
     val apps: List<HostApp> = emptyList(),
+    /** Identifiants des applications pour lesquelles l'hote annonce une mise a jour. */
+    val upgradable: Set<String> = emptySet(),
     val usage: HostUsage = HostUsage(),
     val scheduledOff: ScheduledOff? = null,
+    val savingSchedule: Boolean = false,
     val busyApp: String? = null,
     val message: String? = null,
 ) {
@@ -107,13 +110,17 @@ class HostViewModel(
             val apps = async { hosts.apps(hostId) }
             val usage = async { hosts.usage(hostId) }
             val schedule = async { hosts.scheduledOff(hostId) }
-            awaitAll(apps, usage, schedule)
+            val upgradable = async { hosts.upgradable(hostId) }
+            awaitAll(apps, usage, schedule, upgradable)
 
             val appsResult = apps.await()
             _ui.update { state ->
                 state.copy(
                     loading = false,
                     apps = (appsResult as? ApiResult.Ok)?.value ?: state.apps,
+                    // Ne pas savoir qu'une mise a jour existe n'empeche rien :
+                    // un echec ici laisse simplement la liste vide.
+                    upgradable = (upgradable.await() as? ApiResult.Ok)?.value ?: emptySet(),
                     usage = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage(),
                     // Une extinction programmee absente n'est pas une erreur :
                     // tous les systemes ne la proposent pas.
@@ -209,6 +216,66 @@ class HostViewModel(
                 )
             }
             if (result is ApiResult.Ok) refresh()
+        }
+    }
+
+    /**
+     * Met a jour une application.
+     *
+     * L'hote travaille ensuite en arriere-plan : on ne saura que la mise a jour
+     * est finie qu'au rafraichissement suivant, et l'ecran le dit plutot que de
+     * faire croire a une operation instantanee.
+     */
+    fun upgrade(app: HostApp) {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
+        viewModelScope.launch {
+            _ui.update { it.copy(busyApp = app.id) }
+            val result = hosts.upgrade(hostId, app)
+            _ui.update {
+                it.copy(
+                    busyApp = null,
+                    message = when (result) {
+                        is ApiResult.Ok -> "${app.name} : mise à jour lancée sur l'hôte."
+                        is ApiResult.Unsupported -> "L'hôte ne dit pas comment mettre à jour ${app.name}."
+                        else -> result.errorText()
+                    },
+                )
+            }
+            if (result is ApiResult.Ok) refresh()
+        }
+    }
+
+    /**
+     * Enregistre l'extinction programmee, puis relit ce que l'hote annonce.
+     *
+     * La relecture n'est pas une precaution de style : le corps de cette requete
+     * est deduit de la forme de la lecture, pas d'un contrat publie. Afficher ce
+     * que la machine dit ensuite, plutot que ce qu'on lui a demande, est la
+     * seule facon honnete de presenter un reglage qui l'eteindra.
+     */
+    fun saveSchedule(schedule: ScheduledOff) {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
+        viewModelScope.launch {
+            _ui.update { it.copy(savingSchedule = true) }
+            val result = hosts.setScheduledOff(hostId, schedule)
+            val reread = if (result is ApiResult.Ok) hosts.scheduledOff(hostId) else null
+            _ui.update { state ->
+                state.copy(
+                    savingSchedule = false,
+                    scheduledOff = (reread as? ApiResult.Ok)?.value ?: state.scheduledOff,
+                    message = when (result) {
+                        is ApiResult.Ok -> if (schedule.active) {
+                            "Extinction programmée enregistrée."
+                        } else {
+                            "Extinction programmée désactivée."
+                        }
+
+                        else -> result.errorText()
+                    },
+                )
+            }
         }
     }
 

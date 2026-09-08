@@ -31,9 +31,16 @@ interface HostClient {
 
     suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int>
 
+    /** Les identifiants des applications pour lesquelles l'hote annonce une mise a jour. */
+    suspend fun upgradable(): ApiResult<Set<String>>
+
+    suspend fun upgrade(appId: String, appType: String): ApiResult<Int>
+
     suspend fun usage(): ApiResult<HostUsage>
 
     suspend fun scheduledOff(): ApiResult<ScheduledOff>
+
+    suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int>
 
     suspend fun power(action: HostPower): ApiResult<Int>
 
@@ -66,8 +73,14 @@ object UnsupportedHostClient : HostClient {
     override suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int> =
         ApiResult.Unsupported
 
+    override suspend fun upgradable(): ApiResult<Set<String>> = ApiResult.Unsupported
+    override suspend fun upgrade(appId: String, appType: String): ApiResult<Int> =
+        ApiResult.Unsupported
+
     override suspend fun usage(): ApiResult<HostUsage> = ApiResult.Unsupported
     override suspend fun scheduledOff(): ApiResult<ScheduledOff> = ApiResult.Unsupported
+    override suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int> =
+        ApiResult.Unsupported
     override suspend fun power(action: HostPower): ApiResult<Int> = ApiResult.Unsupported
     override fun close() = Unit
 }

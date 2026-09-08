@@ -121,6 +121,15 @@ class HostRepository(private val store: HostStore) {
         action: HostAppAction,
     ): ApiResult<Int> = withClient(hostId) { it.setAppStatus(appId, action) }
 
+    suspend fun upgradable(hostId: String): ApiResult<Set<String>> =
+        withClient(hostId) { it.upgradable() }
+
+    suspend fun upgrade(hostId: String, app: HostApp): ApiResult<Int> =
+        withClient(hostId) { it.upgrade(app.id, app.appType) }
+
+    suspend fun setScheduledOff(hostId: String, schedule: ScheduledOff): ApiResult<Int> =
+        withClient(hostId) { it.setScheduledOff(schedule) }
+
     /** Relance l'application qui heberge Portainer, choisie une fois dans les reglages. */
     suspend fun startPortainer(hostId: String): ApiResult<Int> {
         val appId = store.get(hostId)?.portainerAppId.orEmpty()

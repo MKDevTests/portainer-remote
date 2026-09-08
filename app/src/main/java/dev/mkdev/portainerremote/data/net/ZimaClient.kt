@@ -26,10 +26,12 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 
 /**
  * Client d'un hote ZimaOS (ou CasaOS, dont ZimaOS derive).
@@ -285,6 +287,7 @@ class ZimaClient(
                     id = id,
                     name = obj.title() ?: id,
                     running = status.equals("running", true) || status.equals("started", true),
+                    appType = obj.string("app_type") ?: obj.string("type").orEmpty(),
                 )
             }
             .sortedBy { it.name.lowercase() }
@@ -319,6 +322,52 @@ class ZimaClient(
             HttpMethod.Put,
             "/v2/app_management/compose/$appId/status",
             JsonPrimitive(action.value),
+        ).outcome()
+    }
+
+    /**
+     * Les applications que l'hote declare a mettre a jour.
+     *
+     * La forme de la reponse n'a pas pu etre observee : sur la machine sondee,
+     * la liste etait vide, ce qui est le cas le plus courant et le moins
+     * bavard. On accepte donc les deux formes plausibles - des objets, ou des
+     * identifiants nus - et une forme inconnue donne une liste vide plutot
+     * qu'une erreur : ne pas savoir qu'une mise a jour existe est moins grave
+     * que de refuser d'afficher l'ecran.
+     */
+    override suspend fun upgradable(): ApiResult<Set<String>> = attempt {
+        val response = call(HttpMethod.Get, "/v2/app_management/apps/upgradable")
+        if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
+        val body = parse(response.bodyAsText()) as? JsonObject
+            ?: return@attempt ApiResult.Ok(emptySet())
+        val data = body["data"] as? JsonArray ?: return@attempt ApiResult.Ok(emptySet())
+        ApiResult.Ok(
+            data.mapNotNullTo(mutableSetOf()) { element ->
+                when (element) {
+                    is JsonPrimitive -> element.contentOrNull?.takeIf { it.isNotBlank() }
+                    is JsonObject -> element.string("id")
+                        ?: element.string("app_id")
+                        ?: element.string("store_app_id")
+                        ?: element.string("name")
+
+                    else -> null
+                }
+            },
+        )
+    }
+
+    /**
+     * Met a jour une application du magasin.
+     *
+     * Le type est obligatoire et voyage en parametre de requete. On renvoie
+     * celui que l'hote a donne a l'application : ecrire « v2app » en dur
+     * marcherait aujourd'hui sur cette machine, et deviendrait faux ailleurs.
+     */
+    override suspend fun upgrade(appId: String, appType: String): ApiResult<Int> = attempt {
+        if (appType.isBlank()) return@attempt ApiResult.Unsupported
+        call(
+            HttpMethod.Post,
+            "/v2/app_management/upgrade/$appId?type=$appType",
         ).outcome()
     }
 
@@ -382,6 +431,26 @@ class ZimaClient(
                     ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList(),
             ),
         )
+    }
+
+    /**
+     * Regle l'extinction programmee.
+     *
+     * Le corps reprend la forme exacte de ce que la lecture renvoie : heure,
+     * minute, et jours. Il n'y a pas d'interrupteur - une liste de jours vide
+     * desactive. L'appelant relit ensuite ce que l'hote annonce, plutot que de
+     * supposer que sa demande a ete comprise telle quelle.
+     */
+    override suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int> = attempt {
+        call(
+            HttpMethod.Put,
+            "/v2/zimaos/scheduledoff",
+            buildJsonObject {
+                put("hour", schedule.hour)
+                put("minute", schedule.minute)
+                putJsonArray("weekdays") { schedule.weekdays.forEach { add(it) } }
+            },
+        ).outcome()
     }
 
     /**

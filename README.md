@@ -269,10 +269,13 @@ dont on ne sait rien.
 Une fois connecté, il donne :
 
 - la charge de la machine — processeur, mémoire, disque, temps d'allumage ;
-- la liste des applications gérées par l'hôte, démarrables et arrêtables ;
+- la liste des applications gérées par l'hôte : démarrer, arrêter, relancer, et
+  mettre à jour celles pour lesquelles l'hôte annonce une nouvelle version ;
 - le choix de celle qui héberge Portainer, pour la relancer depuis ici le jour
   où Portainer ne répond plus ;
-- l'extinction programmée, **en lecture seule** ;
+- l'extinction programmée, en lecture **et en écriture** — heure, minutes et
+  jours ; une liste de jours vide désactive, puisque l'hôte n'a pas
+  d'interrupteur ;
 - redémarrer et éteindre la machine, avec confirmation.
 
 Les routes ne sont pas devinées. L'interface de ZimaOS est servie par des
@@ -282,9 +285,10 @@ par la route de statut a été vérifié dans la spécification publique de
 CasaOS-AppManagement : une chaîne JSON nue, `"start"`, `"restart"` ou `"stop"`,
 et non un objet.
 
-L'extinction programmée n'est pas modifiable parce que le corps de sa requête
-n'a pas été vérifié. Envoyer une supposition à une route qui éteint une machine
-serait une mauvaise façon de la découvrir.
+Le corps de la requête d'extinction programmée est déduit de la forme de sa
+lecture, pas d'un contrat publié. L'écran affiche donc toujours ce que l'hôte
+annonce **après** enregistrement, jamais ce qu'on lui a demandé : sur un réglage
+qui éteint une machine, la machine reste seule juge de ce qu'elle a compris.
 
 ## Cinq règles de conception
 

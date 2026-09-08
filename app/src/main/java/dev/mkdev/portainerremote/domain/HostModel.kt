@@ -47,6 +47,12 @@ data class HostApp(
     val id: String,
     val name: String,
     val running: Boolean,
+    /**
+     * Le type que l'hote donne a l'application. La route de mise a jour le
+     * reclame, et on le lui rend tel quel plutot que d'ecrire une constante :
+     * c'est lui qui sait, et la valeur peut differer d'un systeme a l'autre.
+     */
+    val appType: String = "",
 )
 
 /**
@@ -76,6 +82,25 @@ data class ScheduledOff(
     val weekdays: List<String> = emptyList(),
 ) {
     val active: Boolean get() = weekdays.isNotEmpty()
+
+    companion object {
+        /**
+         * Les codes de jours attendus par l'hote, dans l'ordre ou on les lit
+         * en francais - la semaine commence lundi, pas dimanche.
+         */
+        val WEEK = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+
+        fun shortLabel(code: String): String = when (code) {
+            "MON" -> "Lun"
+            "TUE" -> "Mar"
+            "WED" -> "Mer"
+            "THU" -> "Jeu"
+            "FRI" -> "Ven"
+            "SAT" -> "Sam"
+            "SUN" -> "Dim"
+            else -> code
+        }
+    }
 }
 
 /** Ce qu'on peut demander a la machine. Une action, un chemin, rien de plus. */
