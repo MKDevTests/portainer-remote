@@ -44,62 +44,87 @@ Write-Host ""
 Write-Host "Phase 1 - extraction des routes (aucun identifiant requis)" -ForegroundColor Cyan
 
 $index = Invoke-WebRequest -Uri "$BaseUrl/" -UseBasicParsing -TimeoutSec 15
-$assets = [System.Collections.Generic.HashSet[string]]::new()
 
-foreach ($m in [regex]::Matches($index.Content, '(?:src|href)="([^"]+\.js)"')) {
-  [void]$assets.Add($m.Groups[1].Value)
-}
-# Les imports dynamiques citent leurs voisins : un niveau de plus suffit a
-# atteindre les modules d'API, qui ne sont pas charges par la page d'accueil.
-foreach ($m in [regex]::Matches($index.Content, '"(\.?/assets/[^"]+\.js)"')) {
-  [void]$assets.Add($m.Groups[1].Value)
-}
-
-Write-Host ("  {0} fichier(s) reference(s) par la page d'accueil" -f $assets.Count)
-
-$routes = [System.Collections.Generic.HashSet[string]]::new()
-$seen = [System.Collections.Generic.HashSet[string]]::new()
 $queue = New-Object System.Collections.Queue
-foreach ($a in $assets) { $queue.Enqueue($a) }
+$seen  = [System.Collections.Generic.HashSet[string]]::new()
 
-while ($queue.Count -gt 0) {
+function Enqueue-Assets($text) {
+  foreach ($m in [regex]::Matches($text, '(?:src|href)="([^"]+\.js)"')) { $queue.Enqueue($m.Groups[1].Value) }
+  # Les bundles Vite citent leurs voisins en clair : c'est ainsi qu'on atteint
+  # les modules d'API, qui ne sont pas tous charges par la page d'accueil.
+  foreach ($m in [regex]::Matches($text, '["'']((?:\.{0,2}/)?assets/[^"'']+\.js)["'']')) { $queue.Enqueue($m.Groups[1].Value) }
+}
+
+Enqueue-Assets $index.Content
+
+$bases     = [System.Collections.Generic.HashSet[string]]::new()
+$endpoints = [System.Collections.Generic.HashSet[string]]::new()
+$files     = 0
+
+# Plafond volontaire : l'application entiere pese plusieurs mega-octets, et les
+# modules d'API sont atteints bien avant.
+while ($queue.Count -gt 0 -and $files -lt 80) {
   $rel = $queue.Dequeue()
-  if (-not $seen.Add($rel)) { continue }
+  $key = $rel.TrimStart(".").TrimStart("/")
+  if (-not $seen.Add($key)) { continue }
 
   $url = $rel
-  if (-not $rel.StartsWith("http")) {
-    $url = "$BaseUrl/" + $rel.TrimStart("./").TrimStart("/")
-  }
+  if (-not $rel.StartsWith("http")) { $url = "$BaseUrl/" + $key }
 
   try {
     $js = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20).Content
   } catch {
-    Write-Host ("  ignore {0}" -f $rel) -ForegroundColor DarkGray
     continue
   }
+  $files++
 
-  foreach ($m in [regex]::Matches($js, '/v[12]/[A-Za-z0-9_\-/\.\{\}\$:]{2,80}')) {
-    [void]$routes.Add($m.Value)
-  }
-  # Un seul niveau de descente : au-dela, on retelecharge toute l'application.
-  if ($seen.Count -le $assets.Count) {
-    foreach ($m in [regex]::Matches($js, '"(\.?/assets/[^"]+\.js)"')) {
-      $queue.Enqueue($m.Groups[1].Value)
+  # 1. Les bases, passees au constructeur des clients generes.
+  foreach ($m in [regex]::Matches($js, '/v[12]/[A-Za-z0-9_\-/\.]{2,60}')) { [void]$bases.Add($m.Value) }
+
+  # 2. Les chemins relatifs, avec leur verbe. Un client genere ecrit le chemin
+  #    puis, un peu plus loin, la methode : on lit les deux ensemble, sinon une
+  #    liste de chemins sans verbe ne dit pas ce qui demarre quoi.
+  foreach ($m in [regex]::Matches($js, '["''`](/[A-Za-z0-9_\-/\{\}\$\.]{2,70})["''`]')) {
+    $path = $m.Groups[1].Value
+    if ($path -match '\.(js|css|png|svg|jpg|json|woff2?)$') { continue }
+    if ($path -match '^/(assets|node_modules)/') { continue }
+
+    $verb = "?"
+    $tail = $js.Substring($m.Index, [Math]::Min(400, $js.Length - $m.Index))
+    $mv = [regex]::Match($tail, 'method\s*:\s*["'']([A-Za-z]+)["'']')
+    if ($mv.Success) {
+      $verb = $mv.Groups[1].Value.ToUpper()
+    } else {
+      $head = $js.Substring([Math]::Max(0, $m.Index - 160), [Math]::Min(160, $m.Index))
+      $mh = [regex]::Match($head, '\.(get|post|put|patch|delete)\(\s*$')
+      if ($mh.Success) { $verb = $mh.Groups[1].Value.ToUpper() }
     }
+    [void]$endpoints.Add(("{0,-6} {1}" -f $verb, $path))
   }
+
+  if ($files -le 20) { Enqueue-Assets $js }
 }
 
-$sorted = $routes | Sort-Object
+Write-Host ("  {0} fichier(s) analyse(s)" -f $files)
+
+$sorted = $bases | Sort-Object
 $sorted | Out-File (Join-Path $out "routes.txt") -Encoding utf8
-Write-Host ("  {0} route(s) distinctes -> {1}" -f $sorted.Count, (Join-Path $out "routes.txt")) -ForegroundColor Green
+
+$eps = $endpoints | Sort-Object { $_.Substring(7) }
+$eps | Out-File (Join-Path $out "endpoints.txt") -Encoding utf8
+Write-Host ("  {0} base(s), {1} chemin(s) -> {2}" -f $sorted.Count, $eps.Count, $out) -ForegroundColor Green
 
 Write-Host ""
-Write-Host "  Routes de gestion d'applications :" -ForegroundColor Yellow
-$sorted | Where-Object { $_ -match "app_management|compose|app_store" } | ForEach-Object { Write-Host "    $_" }
+Write-Host "  Bases d'API :" -ForegroundColor Yellow
+$sorted | ForEach-Object { Write-Host "    $_" }
 
 Write-Host ""
-Write-Host "  Routes systeme et alimentation :" -ForegroundColor Yellow
-$sorted | Where-Object { $_ -match "shutdown|reboot|restart|power|sleep|scheduled|usage|device|system" } |
+Write-Host "  Applications et compose :" -ForegroundColor Yellow
+$eps | Where-Object { $_ -match "compose|app|store|container|image" } | ForEach-Object { Write-Host "    $_" }
+
+Write-Host ""
+Write-Host "  Systeme et alimentation :" -ForegroundColor Yellow
+$eps | Where-Object { $_ -match "shutdown|reboot|restart|power|sleep|scheduled|usage|state|status|device|system" } |
   ForEach-Object { Write-Host "    $_" }
 
 if (-not $Auth) {
