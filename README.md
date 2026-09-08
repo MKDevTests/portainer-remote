@@ -395,6 +395,11 @@ Portainer :
   d'en-tête, puis le jeton — jamais en boucle.
 - L'adresse de l'hôte est avertie en `http://` non local, comme celle de
   Portainer.
+- La liste des applications lit `installed/list` et non `compose` : la seconde
+  renvoie les fichiers compose complets, donc les blocs `environment` — des mots
+  de passe et des clés d'API en clair — pour afficher un point vert. Une
+  application n'a pas à télécharger ce dont elle n'a pas besoin, et cela vaut
+  d'abord pour les secrets des autres.
 
 ## Outils
 
