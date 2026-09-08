@@ -57,6 +57,7 @@ function Enqueue-Assets($text) {
 
 Enqueue-Assets $index.Content
 
+$corpus    = New-Object System.Text.StringBuilder
 $bases     = [System.Collections.Generic.HashSet[string]]::new()
 $endpoints = [System.Collections.Generic.HashSet[string]]::new()
 $files     = 0
@@ -77,6 +78,7 @@ while ($queue.Count -gt 0 -and $files -lt 80) {
     continue
   }
   $files++
+  [void]$corpus.Append($js)
 
   # 1. Les bases, passees au constructeur des clients generes.
   foreach ($m in [regex]::Matches($js, '/v[12]/[A-Za-z0-9_\-/\.]{2,60}')) { [void]$bases.Add($m.Value) }
@@ -126,6 +128,40 @@ Write-Host ""
 Write-Host "  Systeme et alimentation :" -ForegroundColor Yellow
 $eps | Where-Object { $_ -match "shutdown|reboot|restart|power|sleep|scheduled|usage|state|status|device|system" } |
   ForEach-Object { Write-Host "    $_" }
+
+# Une route ne suffit pas : il faut savoir ce qu'on lui envoie. Le corps de la
+# requete est ecrit a cote du chemin dans un client genere, donc on relit le
+# voisinage plutot que de deviner un nom de champ ou une valeur d'enumeration.
+$interesting = @(
+  '/compose/\{[^}]+\}/status',
+  '/sys/state/',
+  '/scheduledoff',
+  '/unapp/(start|stop)',
+  '/disk/sleep'
+)
+
+$all = $corpus.ToString()
+$ctx = @()
+foreach ($pattern in $interesting) {
+  $hits = [regex]::Matches($all, $pattern)
+  $shown = 0
+  foreach ($h in $hits) {
+    if ($shown -ge 2) { break }
+    $from = [Math]::Max(0, $h.Index - 260)
+    $len  = [Math]::Min(560, $all.Length - $from)
+    $ctx += "----- $pattern -----"
+    $ctx += $all.Substring($from, $len)
+    $ctx += ""
+    $shown++
+  }
+}
+
+if ($ctx.Count -gt 0) {
+  $ctx | Out-File (Join-Path $out "context.txt") -Encoding utf8
+  Write-Host ""
+  Write-Host ("  Voisinage des routes decisives -> {0}" -f (Join-Path $out "context.txt")) -ForegroundColor Green
+  Write-Host "  (il contient le nom du champ et les valeurs acceptees)" -ForegroundColor DarkGray
+}
 
 if (-not $Auth) {
   Write-Host ""
