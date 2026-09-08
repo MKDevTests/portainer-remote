@@ -35,7 +35,7 @@ private const val ROUTE_STACKS = "stacks/{serverId}"
 private const val ROUTE_IMAGES = "images/{serverId}"
 private const val ROUTE_UPDATES = "updates"
 private const val ROUTE_BACKUP = "backup"
-private const val ROUTE_HOST = "host/{serverId}"
+private const val ROUTE_HOST = "host"
 private const val ROUTE_LOGS = "logs/{serverId}/{envId}/{containerId}/{name}"
 
 @Composable
@@ -70,7 +70,7 @@ fun App(openUpdatesAtStart: Boolean = false) {
                 viewModel = viewModel(factory = serversFactory),
                 onOpen = { id -> navController.navigate("stacks/$id") },
                 onEdit = { id -> navController.navigate("server/edit/$id") },
-                onOpenHost = { id -> navController.navigate("host/$id") },
+                onOpenHost = { navController.navigate(ROUTE_HOST) },
                 onAdd = { navController.navigate(ROUTE_SERVER_NEW) },
                 onOpenUpdates = { navController.navigate(ROUTE_UPDATES) },
                 onOpenBackup = { navController.navigate(ROUTE_BACKUP) },
@@ -163,21 +163,12 @@ fun App(openUpdatesAtStart: Boolean = false) {
             )
         }
 
-        composable(
-            route = ROUTE_HOST,
-            arguments = listOf(navArgument("serverId") { type = NavType.StringType }),
-        ) { entry ->
-            val serverId = entry.arguments?.getString("serverId").orEmpty()
+        composable(ROUTE_HOST) {
             HostScreen(
                 viewModel = viewModel(
-                    key = "host-$serverId",
                     factory = viewModelFactory {
                         initializer {
-                            HostViewModel(
-                                serverId,
-                                container.serverStore,
-                                container.hostRepository,
-                            )
+                            HostViewModel(container.hostRepository, container.serverStore)
                         }
                     },
                 ),

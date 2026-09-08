@@ -52,7 +52,7 @@ fun ServersScreen(
     onAdd: () -> Unit,
     onOpenUpdates: () -> Unit,
     onOpenBackup: () -> Unit,
-    onOpenHost: (String) -> Unit,
+    onOpenHost: () -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
     val update by viewModel.update.collectAsState()
@@ -62,6 +62,13 @@ fun ServersScreen(
             TopAppBar(
                 title = { Text("Serveurs Portainer") },
                 actions = {
+                    // Le NAS est une machine, pas la propriete d'un serveur : son
+                    // entree est de premier niveau. C'est aussi d'ici qu'on le
+                    // rejoint le jour ou Portainer ne repond plus - donc le jour
+                    // ou aucune carte de serveur ne mene nulle part.
+                    IconButton(onClick = onOpenHost) {
+                        Icon(Icons.Default.Dns, contentDescription = "NAS")
+                    }
                     IconButton(onClick = onOpenBackup) {
                         Icon(
                             Icons.Default.SettingsBackupRestore,
@@ -183,15 +190,6 @@ fun ServersScreen(
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            // L'hote se rejoint depuis ici, et pas depuis
-                            // l'ecran des stacks : le jour ou il sert vraiment,
-                            // c'est parce que Portainer ne repond plus.
-                            IconButton(onClick = { onOpenHost(server.id) }) {
-                                Icon(
-                                    Icons.Default.Dns,
-                                    contentDescription = "Hôte de " + server.label,
                                 )
                             }
                             IconButton(onClick = { onEdit(server.id) }) {

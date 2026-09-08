@@ -1,5 +1,6 @@
 package dev.mkdev.portainerremote.ui.host
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -25,6 +27,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -51,18 +54,21 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.Server
 
 /**
- * L'ecran de l'hote : ce qui se trouve sous Portainer.
+ * L'ecran des NAS : ce qui se trouve sous Portainer.
  *
- * Il ne double pas Portainer. Il n'expose que ce que Portainer ne peut pas
- * faire depuis l'interieur d'un conteneur : relancer Portainer lui-meme, voir
- * la charge de la machine, et l'eteindre.
+ * Il ne double pas Portainer. Il n'expose que ce que Portainer ne peut pas faire
+ * depuis l'interieur d'un conteneur : relancer Portainer lui-meme, voir la
+ * charge de la machine, et l'eteindre.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +88,7 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
     confirm?.let { action ->
         PowerDialog(
             action = action,
-            hostName = ui.server?.label.orEmpty(),
+            hostName = ui.selected?.title.orEmpty(),
             onDismiss = { confirm = null },
             onConfirm = {
                 viewModel.power(action)
@@ -94,28 +100,39 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Hôte") },
+                title = { Text("NAS") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
                     }
                 },
                 actions = {
-                    if (ui.configured) {
+                    if (!ui.setup) {
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Rafraîchir")
                         }
+                    }
+                    if (ui.hosts.isNotEmpty()) {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                         }
                         DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Oublier cet hôte et son mot de passe") },
+                                text = { Text("Ajouter un NAS") },
                                 onClick = {
                                     menuOpen = false
-                                    viewModel.forget()
+                                    viewModel.startAdding()
                                 },
                             )
+                            if (ui.selected != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Oublier ce NAS et son mot de passe") },
+                                    onClick = {
+                                        menuOpen = false
+                                        viewModel.forget()
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -126,29 +143,55 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (ui.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+            // Le selecteur n'apparait qu'a partir de deux machines : une seule
+            // n'a pas besoin qu'on demande laquelle.
+            if (ui.hosts.size > 1 && !ui.adding) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ui.hosts.forEach { host ->
+                        FilterChip(
+                            selected = host.id == ui.selectedId,
+                            onClick = { viewModel.select(host.id) },
+                            label = { Text(host.title) },
+                        )
+                    }
+                }
+            }
+
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().widthIn(max = 720.dp),
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    if (!ui.configured) {
+                    val host = ui.selected
+                    if (ui.setup || host == null) {
                         item {
                             SetupCard(
-                                suggestedUrl = ui.suggestedUrl,
+                                servers = ui.servers,
                                 testing = ui.testing,
+                                canCancel = ui.hosts.isNotEmpty(),
+                                suggestUrl = viewModel::suggestedUrl,
+                                onCancel = viewModel::cancelAdding,
                                 onConnect = viewModel::connect,
                             )
                         }
                         return@LazyColumn
                     }
 
+                    item { IdentityCard(host, ui.servers) }
+
                     item { UsageCard(ui.usage) }
 
                     item {
                         PortainerCard(
                             app = ui.portainerApp,
-                            chosen = ui.config.portainerAppId.isNotBlank(),
+                            chosen = host.portainerAppId.isNotBlank(),
                             busy = ui.busyApp,
                             onAction = viewModel::appAction,
                         )
@@ -159,14 +202,14 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                     item {
                         SectionTitle(
                             "Applications de l'hôte",
-                            "Celles que ZimaOS gère lui-même. Coche celle qui héberge Portainer.",
+                            "Celles que le NAS gère lui-même. Coche celle qui héberge Portainer.",
                         )
                     }
 
                     items(ui.apps, key = { it.id }) { app ->
                         AppRow(
                             app = app,
-                            isPortainer = app.id == ui.config.portainerAppId,
+                            isPortainer = app.id == host.portainerAppId,
                             busy = ui.busyApp == app.id,
                             onChoose = { viewModel.choosePortainerApp(app.id) },
                             onAction = { action -> viewModel.appAction(app, action) },
@@ -202,22 +245,52 @@ private fun SectionTitle(title: String, subtitle: String) {
     }
 }
 
+/** Qui est cette machine, et a quel Portainer elle est rattachee. */
+@Composable
+private fun IdentityCard(host: Host, servers: List<Server>) {
+    val linked = servers.firstOrNull { it.id == host.serverId }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(host.title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                host.kind.label + " · " + host.username,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                linked?.let { "Portainer associé : " + it.label } ?: "Aucun Portainer associé",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
 /**
- * La configuration initiale.
+ * La configuration d'un NAS.
  *
- * L'adresse est pre-remplie a partir de celle de Portainer, parce que dans le
- * cas courant c'est la meme machine. Le mot de passe est saisi ici et scelle
- * dans le Keystore : il ne transite par aucun autre chemin.
+ * Le systeme est declare, pas devine. L'adresse est pre-remplie a partir de
+ * celle du Portainer choisi, parce que dans le cas courant c'est la meme
+ * machine. Le mot de passe est saisi ici et scelle dans le Keystore : il ne
+ * transite par aucun autre chemin.
  */
 @Composable
 private fun SetupCard(
-    suggestedUrl: String,
+    servers: List<Server>,
     testing: Boolean,
-    onConnect: (String, String, String) -> Unit,
+    canCancel: Boolean,
+    suggestUrl: (String) -> String,
+    onCancel: () -> Unit,
+    onConnect: (HostKind, String, String, String, String, String) -> Unit,
 ) {
-    var url by remember(suggestedUrl) { mutableStateOf(suggestedUrl) }
+    var kind by remember { mutableStateOf(HostKind.ZIMA) }
+    var serverId by remember { mutableStateOf(servers.firstOrNull()?.id.orEmpty()) }
+    var label by remember { mutableStateOf("") }
+    var url by remember { mutableStateOf(suggestUrl(serverId)) }
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var urlTouched by remember { mutableStateOf(false) }
 
     // Le mot de passe d'un NAS vaut plus que le jeton d'un Portainer : il ouvre
     // la machine entiere. En http il part en clair dans le corps de la requete,
@@ -233,21 +306,84 @@ private fun SetupCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Connecter l'hôte", style = MaterialTheme.typography.titleMedium)
+            Text("Connecter un NAS", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Si ce Portainer tourne sur un NAS ZimaOS ou CasaOS, l'application peut " +
-                    "aussi relancer Portainer lui-même et éteindre la machine. " +
-                    "Sans cette étape, rien ne change.\n\n" +
-                    "Le mot de passe est scellé par le Keystore Android, comme le jeton " +
+                "Portainer ne peut pas se relancer lui-même : il tourne dans un conteneur. " +
+                    "Si ton NAS tourne sous un système reconnu, l'application peut le relancer " +
+                    "depuis dessous, et éteindre la machine. Sans cette étape, rien ne change." +
+                    "\n\nLe mot de passe est scellé par le Keystore Android, comme le jeton " +
                     "Portainer. Il n'est pas inclus dans les sauvegardes exportées.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            Text("Système du NAS", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                HostKind.entries.forEach { candidate ->
+                    FilterChip(
+                        selected = kind == candidate,
+                        onClick = { kind = candidate },
+                        label = { Text(candidate.label) },
+                    )
+                }
+            }
+            if (!kind.supported) {
+                // Refuser en silence laisse chercher l'erreur ailleurs : on dit
+                // ce qui manque, et on empeche la tentative plutot que de la
+                // laisser echouer sans raison visible.
+                Text(
+                    "${kind.label} n'est pas encore géré. L'entrée existe pour que " +
+                        "l'absence se voie, pas pour faire attendre : rien ne sera " +
+                        "envoyé à cette adresse.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            if (servers.isNotEmpty()) {
+                Text("Portainer associé (facultatif)", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = serverId.isBlank(),
+                        onClick = { serverId = "" },
+                        label = { Text("Aucun") },
+                    )
+                    servers.forEach { server ->
+                        FilterChip(
+                            selected = serverId == server.id,
+                            onClick = {
+                                serverId = server.id
+                                // Tant que l'adresse n'a pas ete touchee, elle
+                                // suit le serveur choisi : c'est la proposition
+                                // qui s'ajuste, jamais la saisie qu'on ecrase.
+                                if (!urlTouched) url = suggestUrl(server.id)
+                            },
+                            label = { Text(server.label) },
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("Nom (facultatif)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
             OutlinedTextField(
                 value = url,
-                onValueChange = { url = it },
-                label = { Text("Adresse de l'interface ZimaOS") },
+                onValueChange = {
+                    url = it
+                    urlTouched = true
+                },
+                label = { Text("Adresse de l'interface du NAS") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                 isError = cleartext,
@@ -278,13 +414,20 @@ private fun SetupCard(
                 modifier = Modifier.fillMaxWidth(),
             )
 
-            Button(
-                onClick = { onConnect(url, user, password) },
-                enabled = !testing && url.isNotBlank() && user.isNotBlank() &&
-                    password.isNotEmpty(),
-                modifier = Modifier.align(Alignment.End),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             ) {
-                Text(if (testing) "Connexion…" else "Tester et enregistrer")
+                if (canCancel) {
+                    OutlinedButton(onClick = onCancel, enabled = !testing) { Text("Annuler") }
+                }
+                Button(
+                    onClick = { onConnect(kind, label, url, user, password, serverId) },
+                    enabled = !testing && kind.supported && url.isNotBlank() &&
+                        user.isNotBlank() && password.isNotEmpty(),
+                ) {
+                    Text(if (testing) "Connexion…" else "Tester et enregistrer")
+                }
             }
         }
     }
@@ -434,9 +577,8 @@ private fun AppRow(
 /**
  * L'extinction programmee est affichee, pas modifiee.
  *
- * Son ecriture demande un corps de requete dont la forme n'a pas ete verifiee :
- * envoyer une supposition a une route qui eteint une machine serait une mauvaise
- * facon de la decouvrir. Le reglage se fait donc dans ZimaOS, et se lit ici.
+ * Le corps de sa requete est desormais connu, mais l'ecriture n'est pas encore
+ * ecrite. Elle se regle donc dans l'interface du NAS, et se lit ici.
  */
 @Composable
 private fun ScheduleCard(schedule: ScheduledOff) {

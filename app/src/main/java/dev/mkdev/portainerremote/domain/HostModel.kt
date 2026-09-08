@@ -1,23 +1,48 @@
 package dev.mkdev.portainerremote.domain
 
 /**
- * Le NAS lui-meme, quand il tourne sous ZimaOS ou CasaOS.
+ * Le systeme qui fait tourner le NAS.
  *
- * Cette couche est optionnelle et detectee : l'app fonctionne entierement sans
- * elle, avec n'importe quel Portainer. Elle n'existe que pour les deux choses
- * que Portainer ne sait pas faire, parce qu'elles se situent au-dessous de lui :
- * demarrer Portainer quand il est arrete, et eteindre la machine.
+ * Il est declare par l'utilisateur, jamais devine. Une application qui part
+ * sonder des routes systeme sans qu'on le lui ait demande n'est pas discrete,
+ * et un NAS qui ne repond pas comme prevu ne merite pas qu'on insiste.
+ *
+ * Les entrees non gerees existent quand meme : une absence annoncee se lit,
+ * une absence silencieuse laisse chercher.
  */
-data class HostConfig(
+enum class HostKind(val label: String, val supported: Boolean) {
+    ZIMA("ZimaOS · CasaOS", true),
+    SYNOLOGY("Synology DSM", false),
+    QNAP("QNAP QTS", false),
+}
+
+/**
+ * Un NAS, tel que l'application le connait.
+ *
+ * C'est une entite a part entiere, et non une propriete d'un serveur Portainer :
+ * deux serveurs peuvent viser la meme machine, et supprimer un serveur ne doit
+ * pas faire oublier la machine. Le lien vers un Portainer existe, mais il est
+ * optionnel - il sert a proposer une adresse, et a savoir quel Portainer on
+ * ressuscite quand on relance son application.
+ */
+data class Host(
+    val id: String = "",
+    val kind: HostKind = HostKind.ZIMA,
+    val label: String = "",
     val baseUrl: String = "",
     val username: String = "",
-    /** L'application qui heberge Portainer, choisie une fois par l'utilisateur. */
+    /** Serveur Portainer associe, s'il y en a un. */
+    val serverId: String = "",
+    /** L'application de l'hote qui heberge Portainer. */
     val portainerAppId: String = "",
 ) {
     val configured: Boolean get() = baseUrl.isNotBlank() && username.isNotBlank()
+
+    /** Ce qu'on affiche : le nom donne, sinon l'adresse, qui identifie toujours. */
+    val title: String get() = label.ifBlank { baseUrl.removePrefix("http://").removePrefix("https://") }
 }
 
-/** Une application connue de ZimaOS. Sur ce NAS, Portainer en est une. */
+/** Une application connue de l'hote. Sur un ZimaOS, Portainer en est une. */
 data class HostApp(
     val id: String,
     val name: String,

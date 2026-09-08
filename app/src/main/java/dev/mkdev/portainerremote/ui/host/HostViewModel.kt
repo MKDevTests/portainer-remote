@@ -6,9 +6,10 @@ import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.HostRepository
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
-import dev.mkdev.portainerremote.domain.HostConfig
+import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -18,69 +19,94 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HostUi(
-    val server: Server? = null,
-    val config: HostConfig = HostConfig(),
+    val hosts: List<Host> = emptyList(),
+    val selectedId: String = "",
+    /** Les serveurs Portainer connus, pour proposer une adresse et un lien. */
+    val servers: List<Server> = emptyList(),
     val loading: Boolean = false,
     val testing: Boolean = false,
-    /** L'adresse proposee tant que rien n'est configure. */
-    val suggestedUrl: String = "",
+    /** Vrai quand on saisit un nouveau NAS, meme s'il en existe deja. */
+    val adding: Boolean = false,
     val apps: List<HostApp> = emptyList(),
     val usage: HostUsage = HostUsage(),
     val scheduledOff: ScheduledOff? = null,
     val busyApp: String? = null,
     val message: String? = null,
 ) {
-    val configured: Boolean get() = config.configured
-    val portainerApp: HostApp? get() = apps.firstOrNull { it.id == config.portainerAppId }
+    val selected: Host? get() = hosts.firstOrNull { it.id == selectedId }
+
+    /** L'ecran de saisie s'affiche tant qu'aucun NAS n'est configure, ou sur demande. */
+    val setup: Boolean get() = adding || selected == null
+
+    val portainerApp: HostApp? get() = apps.firstOrNull { it.id == selected?.portainerAppId }
 }
 
 /**
- * L'ecran de l'hote : la machine sous Portainer.
+ * L'ecran des NAS.
  *
- * Rien n'est charge tant que l'hote n'est pas configure. C'est la difference
- * entre une fonction optionnelle et une fonction desactivee : ici, l'ecran ne
- * parle de ZimaOS que si l'utilisateur lui en a donne l'adresse.
+ * Il ne connait aucun systeme en particulier : il demande un type a
+ * l'utilisateur, le range, et laisse le depot choisir le client. Ajouter un
+ * systeme ne devrait rien changer ici.
  */
 class HostViewModel(
-    private val serverId: String,
-    private val serverStore: ServerStore,
     private val hosts: HostRepository,
+    private val serverStore: ServerStore,
 ) : ViewModel() {
 
     private val _ui = MutableStateFlow(HostUi())
     val ui: StateFlow<HostUi> = _ui.asStateFlow()
 
     init {
-        viewModelScope.launch {
-            val server = serverStore.get(serverId)
-            val config = hosts.config(serverId)
-            _ui.update {
-                it.copy(
-                    server = server,
-                    config = config,
-                    suggestedUrl = config.baseUrl.ifBlank {
-                        server?.baseUrl?.let(hosts::guessBaseUrl).orEmpty()
-                    },
-                )
-            }
-            if (config.configured) refresh()
-        }
+        viewModelScope.launch { reload(selectFirst = true) }
     }
+
+    private suspend fun reload(selectFirst: Boolean = false) {
+        val known = hosts.current()
+        val servers = serverStore.servers.first()
+        _ui.update { state ->
+            val selected = when {
+                selectFirst || state.selectedId.isBlank() -> known.firstOrNull()?.id.orEmpty()
+                known.none { it.id == state.selectedId } -> known.firstOrNull()?.id.orEmpty()
+                else -> state.selectedId
+            }
+            state.copy(hosts = known, servers = servers, selectedId = selected)
+        }
+        if (_ui.value.selected != null) refresh()
+    }
+
+    /** L'adresse proposee : celle du Portainer lie, sinon celle du premier serveur connu. */
+    fun suggestedUrl(serverId: String): String {
+        val servers = _ui.value.servers
+        val server = servers.firstOrNull { it.id == serverId } ?: servers.firstOrNull()
+        return server?.baseUrl?.let(hosts::guessBaseUrl).orEmpty()
+    }
+
+    fun select(hostId: String) {
+        _ui.update { it.copy(selectedId = hostId, adding = false, apps = emptyList()) }
+        viewModelScope.launch { refresh() }
+    }
+
+    fun startAdding() = _ui.update { it.copy(adding = true, message = null) }
+
+    fun cancelAdding() = _ui.update { it.copy(adding = false) }
 
     /**
      * Les trois lectures partent ensemble : elles sont independantes, et les
      * enchainer ferait attendre trois allers-retours la ou un seul suffit.
      */
     fun refresh() {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
         viewModelScope.launch {
             _ui.update { it.copy(loading = true) }
-            val apps = async { hosts.apps(serverId) }
-            val usage = async { hosts.usage(serverId) }
-            val schedule = async { hosts.scheduledOff(serverId) }
+            val apps = async { hosts.apps(hostId) }
+            val usage = async { hosts.usage(hostId) }
+            val schedule = async { hosts.scheduledOff(hostId) }
             awaitAll(apps, usage, schedule)
 
             val appsResult = apps.await()
@@ -90,7 +116,7 @@ class HostViewModel(
                     apps = (appsResult as? ApiResult.Ok)?.value ?: state.apps,
                     usage = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage(),
                     // Une extinction programmee absente n'est pas une erreur :
-                    // CasaOS ne connait pas cette route, seul ZimaOS la sert.
+                    // tous les systemes ne la proposent pas.
                     scheduledOff = (schedule.await() as? ApiResult.Ok)?.value,
                     message = if (appsResult is ApiResult.Ok) state.message else appsResult.errorText(),
                 )
@@ -99,30 +125,39 @@ class HostViewModel(
     }
 
     /** Verifie l'adresse et les identifiants avant d'enregistrer quoi que ce soit. */
-    fun connect(baseUrl: String, username: String, password: String) {
+    fun connect(
+        kind: HostKind,
+        label: String,
+        baseUrl: String,
+        username: String,
+        password: String,
+        serverId: String,
+    ) {
         viewModelScope.launch {
             _ui.update { it.copy(testing = true, message = null) }
-            when (val result = hosts.test(baseUrl.trim(), username.trim(), password)) {
+            val candidate = Host(
+                kind = kind,
+                label = label.trim(),
+                baseUrl = baseUrl.trim(),
+                username = username.trim(),
+                serverId = serverId,
+            )
+            when (val result = hosts.test(candidate, password)) {
                 is ApiResult.Ok -> {
-                    hosts.save(
-                        serverId,
-                        HostConfig(baseUrl.trim(), username.trim(), _ui.value.config.portainerAppId),
-                        password,
-                    )
-                    _ui.update {
-                        it.copy(
-                            testing = false,
-                            config = hosts.config(serverId),
-                            message = "Hôte connecté.",
-                        )
-                    }
-                    refresh()
+                    val id = hosts.save(candidate, password)
+                    _ui.update { it.copy(testing = false, adding = false, selectedId = id) }
+                    reload()
+                    _ui.update { it.copy(message = "NAS connecté.") }
                 }
 
                 is ApiResult.Unsupported -> _ui.update {
                     it.copy(
                         testing = false,
-                        message = "Aucun ZimaOS ni CasaOS à cette adresse.",
+                        message = if (kind.supported) {
+                            "Aucun ${kind.label} à cette adresse."
+                        } else {
+                            "${kind.label} n'est pas encore géré."
+                        },
                     )
                 }
 
@@ -132,31 +167,38 @@ class HostViewModel(
     }
 
     fun forget() {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
         viewModelScope.launch {
-            hosts.forget(serverId)
+            hosts.forget(hostId)
             _ui.update {
-                HostUi(
-                    server = it.server,
-                    suggestedUrl = it.server?.baseUrl?.let(hosts::guessBaseUrl).orEmpty(),
-                    message = "Hôte oublié.",
+                it.copy(
+                    selectedId = "",
+                    apps = emptyList(),
+                    usage = HostUsage(),
+                    scheduledOff = null,
+                    message = "NAS oublié.",
                 )
             }
+            reload(selectFirst = true)
         }
     }
 
     /** Designe l'application qui heberge Portainer : c'est elle qu'on relancera. */
     fun choosePortainerApp(appId: String) {
+        val host = _ui.value.selected ?: return
         viewModelScope.launch {
-            val config = _ui.value.config.copy(portainerAppId = appId)
-            hosts.save(serverId, config, null)
-            _ui.update { it.copy(config = config) }
+            hosts.save(host.copy(portainerAppId = appId), null)
+            reload()
         }
     }
 
     fun appAction(app: HostApp, action: HostAppAction) {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
         viewModelScope.launch {
             _ui.update { it.copy(busyApp = app.id) }
-            val result = hosts.setAppStatus(serverId, app.id, action)
+            val result = hosts.setAppStatus(hostId, app.id, action)
             _ui.update {
                 it.copy(
                     busyApp = null,
@@ -176,8 +218,10 @@ class HostViewModel(
      * qui s'eteint ne repondra plus pour dire qu'elle a compris.
      */
     fun power(action: HostPower) {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank()) return
         viewModelScope.launch {
-            val result = hosts.power(serverId, action)
+            val result = hosts.power(hostId, action)
             _ui.update {
                 it.copy(
                     message = when (result) {

@@ -46,7 +46,7 @@ class ZimaClient(
     baseUrl: String,
     private val username: String,
     private val password: String,
-) {
+) : HostClient {
 
     private val root = baseUrl.trimEnd('/')
 
@@ -217,7 +217,7 @@ class ZimaClient(
      * 401 prouve deja qu'elle existe, donc que le service est la. Une absence de
      * reponse, ou un 404, veut dire que non - et l'app continue sans hote.
      */
-    suspend fun detect(): Boolean = runCatching {
+    override suspend fun detect(): Boolean = runCatching {
         val response = http.request("$root/v1/sys/utilization") { method = HttpMethod.Get }
         when (response.status.value) {
             // Une route protegee qui refuse l'acces prouve qu'elle existe.
@@ -234,7 +234,7 @@ class ZimaClient(
     }.getOrDefault(false)
 
     /** Teste les identifiants. Le jeton obtenu reste en memoire. */
-    suspend fun signIn(): ApiResult<Boolean> = attempt {
+    override suspend fun signIn(): ApiResult<Boolean> = attempt {
         if (ensureToken() == null) ApiResult.HttpError(401) else ApiResult.Ok(true)
     }
 
@@ -251,7 +251,7 @@ class ZimaClient(
      * afficher un point vert. Une application n'a pas a telecharger ce dont
      * elle n'a pas besoin, et cela vaut d'abord pour les secrets des autres.
      */
-    suspend fun apps(): ApiResult<List<HostApp>> = attempt {
+    override suspend fun apps(): ApiResult<List<HostApp>> = attempt {
         val response = call(HttpMethod.Get, "/v2/app_management/installed/list")
         if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
         val body = parse(response.bodyAsText()) ?: return@attempt ApiResult.Ok(emptyList())
@@ -314,7 +314,7 @@ class ZimaClient(
      * forme que decrit le contrat de la route, verifiee dans la specification
      * publique de CasaOS-AppManagement.
      */
-    suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int> = attempt {
+    override suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int> = attempt {
         call(
             HttpMethod.Put,
             "/v2/app_management/compose/$appId/status",
@@ -324,7 +324,7 @@ class ZimaClient(
 
     // -------------------------------------------------------------- machine
 
-    suspend fun usage(): ApiResult<HostUsage> = attempt {
+    override suspend fun usage(): ApiResult<HostUsage> = attempt {
         val response = call(HttpMethod.Get, "/v1/sys/utilization")
         if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
         val body = parse(response.bodyAsText()) as? JsonObject
@@ -368,7 +368,7 @@ class ZimaClient(
         return -1
     }
 
-    suspend fun scheduledOff(): ApiResult<ScheduledOff> = attempt {
+    override suspend fun scheduledOff(): ApiResult<ScheduledOff> = attempt {
         val response = call(HttpMethod.Get, "/v2/zimaos/scheduledoff")
         if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
         val body = parse(response.bodyAsText()) as? JsonObject
@@ -389,7 +389,7 @@ class ZimaClient(
      * PUT /v1/sys/state/off. Rien ici ne confirme a la place de l'utilisateur -
      * la confirmation appartient a l'interface.
      */
-    suspend fun power(action: HostPower): ApiResult<Int> = attempt {
+    override suspend fun power(action: HostPower): ApiResult<Int> = attempt {
         call(HttpMethod.Put, "/v1/sys/state/${action.state}").outcome()
     }
 
@@ -400,7 +400,7 @@ class ZimaClient(
         ApiResult.Unsupported -> ApiResult.Unsupported
     }
 
-    fun close() {
+    override fun close() {
         runCatching { http.close() }
     }
 

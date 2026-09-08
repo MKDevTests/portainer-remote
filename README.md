@@ -33,7 +33,9 @@ en géométrie téléphone et en géométrie tablette.
 | Choix manuel du port de raccourci | fait |
 | Onglet Favoris, en raccourcis ou en détaillé | fait |
 | Noms personnalisés et descriptions | fait |
-| Hôte ZimaOS / CasaOS, optionnel et détecté | fait |
+| Panneau NAS séparé, système déclaré | fait |
+| NAS ZimaOS / CasaOS | fait |
+| NAS Synology, QNAP | annoncé, pas encore géré |
 
 ### Mises à jour
 
@@ -242,16 +244,27 @@ stockage. L'import restaure par-dessus la configuration en place en conservant
 les identifiants, donc réimporter deux fois la même sauvegarde ne crée pas de
 doublons.
 
-### Hôte ZimaOS ou CasaOS
+### Le panneau NAS
 
 Portainer ne peut pas se relancer lui-même : il tourne dans un conteneur. Quand
 il est arrêté, l'application n'a plus d'interlocuteur. Si le NAS tourne sous
 **ZimaOS** ou **CasaOS**, la couche du dessous, elle, répond encore.
 
-L'icône **Hôte** sur chaque carte de serveur ouvre cet écran. Il est
-**entièrement optionnel** : sans adresse configurée, rien ne change et
+L'icône **NAS**, dans la barre de l'écran des serveurs, ouvre ce panneau. Elle
+est de premier niveau et non sur une carte de serveur, pour deux raisons : un
+NAS est une machine, pas la propriété d'un de ses logiciels — deux serveurs
+peuvent viser la même machine, et supprimer un serveur ne doit pas faire oublier
+la machine ; et le jour où ce panneau sert vraiment, c'est parce que Portainer
+ne répond plus, donc parce qu'aucune carte de serveur ne mène nulle part.
+
+Le système est **déclaré par l'utilisateur**, jamais deviné : une application qui
+part sonder des routes système sans qu'on le lui ait demandé n'est pas discrète.
+Synology et QNAP apparaissent dans le choix sans être gérés — une absence
+annoncée se lit, une absence silencieuse laisse chercher.
+
+Le panneau est **entièrement optionnel** : sans NAS configuré, rien ne change et
 l'application reste utilisable avec n'importe quel Portainer, sur une machine
-qui n'a jamais entendu parler de ZimaOS.
+dont on ne sait rien.
 
 Une fois connecté, il donne :
 
