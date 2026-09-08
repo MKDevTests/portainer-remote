@@ -3,9 +3,11 @@ package dev.mkdev.portainerremote.data
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.data.net.HostClient
 import dev.mkdev.portainerremote.data.store.HostStore
+import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -139,6 +141,12 @@ class HostRepository(private val store: HostStore) {
 
     suspend fun usage(hostId: String): ApiResult<HostUsage> =
         withClient(hostId) { it.usage() }
+
+    suspend fun machine(hostId: String): ApiResult<HostMachine> =
+        withClient(hostId) { it.machine() }
+
+    suspend fun diskSleep(hostId: String): ApiResult<DiskSleep> =
+        withClient(hostId) { it.diskSleep() }
 
     suspend fun scheduledOff(hostId: String): ApiResult<ScheduledOff> =
         withClient(hostId) { it.scheduledOff() }

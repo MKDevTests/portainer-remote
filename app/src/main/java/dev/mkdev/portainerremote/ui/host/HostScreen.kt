@@ -56,12 +56,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostKind
+import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.NetRate
 import dev.mkdev.portainerremote.domain.ScheduledOff
 import dev.mkdev.portainerremote.domain.Server
 
@@ -189,6 +192,15 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                     item { IdentityCard(host, ui.servers) }
 
                     item { UsageCard(ui.usage) }
+
+                    item {
+                        HealthCard(
+                            usage = ui.usage,
+                            machine = ui.machine,
+                            diskSleep = ui.diskSleep,
+                            rates = ui.rates,
+                        )
+                    }
 
                     item {
                         PortainerCard(
@@ -481,6 +493,129 @@ private fun Gauge(label: String, percent: Int) {
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
+    }
+}
+
+/**
+ * L'etat de sante de la machine.
+ *
+ * Elle ne montre que ce que l'hote a effectivement publie : chaque ligne
+ * disparait quand son champ manque, plutot que d'afficher un tiret qui laisse
+ * croire a une panne. Une carte vide n'apparait pas du tout.
+ */
+@Composable
+private fun HealthCard(
+    usage: HostUsage,
+    machine: HostMachine,
+    diskSleep: DiskSleep?,
+    rates: List<NetRate>,
+) {
+    val lines = buildList {
+        if (machine.model.isNotBlank()) add("Modèle" to machine.model)
+        if (machine.osVersion.isNotBlank()) add("Système" to machine.osVersion)
+        if (machine.cpuModel.isNotBlank()) {
+            add(
+                "Processeur" to if (machine.cpuCores > 0) {
+                    "${machine.cpuModel} · ${machine.cpuCores} cœurs"
+                } else {
+                    machine.cpuModel
+                },
+            )
+        }
+        if (usage.cpuTemperature >= 0) add("Température" to "${usage.cpuTemperature} °C")
+        if (usage.memoryTotalBytes > 0) {
+            add(
+                "Mémoire" to buildString {
+                    append(humanBytes(usage.memoryUsedBytes))
+                    append(" / ")
+                    append(humanBytes(usage.memoryTotalBytes))
+                    if (machine.memoryType.isNotBlank()) append(" · ${machine.memoryType}")
+                },
+            )
+        }
+        if (usage.diskTotalBytes > 0) {
+            add(
+                "Disque système" to
+                    "${humanBytes(usage.diskUsedBytes)} / ${humanBytes(usage.diskTotalBytes)}",
+            )
+        }
+        usage.diskHealthy?.let { add("Santé du disque" to if (it) "bonne" else "dégradée") }
+        diskSleep?.let { add("Veille des disques" to it.label) }
+    }
+
+    if (lines.isEmpty() && rates.isEmpty()) return
+
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text("Santé", style = MaterialTheme.typography.titleMedium)
+
+            lines.forEach { (label, value) ->
+                Row(Modifier.fillMaxWidth()) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        value,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+
+            if (rates.isNotEmpty()) {
+                Text(
+                    "Réseau",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                rates.forEach { rate ->
+                    Row(Modifier.fillMaxWidth()) {
+                        Text(
+                            rate.name,
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "↑ ${humanBytes(rate.sentPerSecond)}/s · " +
+                                "↓ ${humanBytes(rate.receivedPerSecond)}/s",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+            } else if (usage.network.isNotEmpty()) {
+                Text(
+                    "Débit réseau au prochain rafraîchissement : il se déduit de deux mesures.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+/** Des octets lisibles. Base 1000, comme les fabricants et comme l'hote. */
+private fun humanBytes(bytes: Long): String {
+    if (bytes < 0) return "?"
+    val units = listOf("o", "ko", "Mo", "Go", "To")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1000 && unit < units.lastIndex) {
+        value /= 1000
+        unit++
+    }
+    return if (unit == 0 || value >= 100) {
+        "%.0f %s".format(value, units[unit])
+    } else {
+        "%.1f %s".format(value, units[unit])
     }
 }
 

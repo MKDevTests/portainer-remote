@@ -65,8 +65,83 @@ data class HostUsage(
     val cpuPercent: Int = -1,
     val memoryPercent: Int = -1,
     val diskPercent: Int = -1,
+    /** En degres Celsius. -1 quand l'hote ne la publie pas. */
+    val cpuTemperature: Int = -1,
+    /** Null quand l'hote ne se prononce pas sur la sante du disque systeme. */
+    val diskHealthy: Boolean? = null,
+    val memoryUsedBytes: Long = -1,
+    val memoryTotalBytes: Long = -1,
+    val diskUsedBytes: Long = -1,
+    val diskTotalBytes: Long = -1,
+    val network: List<NetCounters> = emptyList(),
+    /** Horodatage local de la mesure, pour calculer un debit entre deux lectures. */
+    val takenAt: Long = 0,
 ) {
     val known: Boolean get() = cpuPercent >= 0 || memoryPercent >= 0 || diskPercent >= 0
+}
+
+/**
+ * Les compteurs d'une interface reseau.
+ *
+ * Ce sont des totaux cumules depuis le demarrage, pas des debits. Un debit se
+ * deduit de deux mesures, et l'horloge utilisee est celle de l'appareil : le
+ * champ de temps de l'hote existe, mais son unite n'a pas ete mesuree, et un
+ * debit calcule sur une unite supposee serait faux sans le dire.
+ */
+data class NetCounters(
+    val name: String,
+    val sentBytes: Long,
+    val receivedBytes: Long,
+)
+
+/** Le debit d'une interface, deduit de deux mesures successives. */
+data class NetRate(
+    val name: String,
+    val sentPerSecond: Long,
+    val receivedPerSecond: Long,
+)
+
+/** Ce que la machine est, par opposition a ce qu'elle fait. */
+data class HostMachine(
+    val model: String = "",
+    val name: String = "",
+    val osVersion: String = "",
+    val cpuModel: String = "",
+    val cpuCores: Int = 0,
+    val memoryTotalBytes: Long = -1,
+    val memoryType: String = "",
+) {
+    val known: Boolean
+        get() = model.isNotBlank() || osVersion.isNotBlank() || cpuModel.isNotBlank()
+}
+
+/**
+ * Le delai avant mise en veille des disques.
+ *
+ * L'hote le publie sous forme d'un niveau ATA, la meme echelle que hdparm : de
+ * 1 a 240, des pas de cinq secondes ; de 241 a 251, des pas de trente minutes.
+ * L'interpretation est donnee comme telle - c'est une lecture du standard, pas
+ * une mesure faite sur la machine.
+ */
+@JvmInline
+value class DiskSleep(val level: Int) {
+
+    val minutes: Int?
+        get() = when (level) {
+            in 1..240 -> (level * 5) / 60
+            in 241..251 -> (level - 240) * 30
+            else -> null
+        }
+
+    val label: String
+        get() = when {
+            level <= 0 -> "jamais"
+            minutes == null -> "niveau $level"
+            minutes == 0 -> "moins d'une minute"
+            minutes!! < 60 -> "${minutes} min"
+            minutes!! % 60 == 0 -> "${minutes!! / 60} h"
+            else -> "${minutes!! / 60} h ${minutes!! % 60} min"
+        }
 }
 
 /**

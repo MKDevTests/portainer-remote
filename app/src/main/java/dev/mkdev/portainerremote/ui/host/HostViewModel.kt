@@ -6,12 +6,15 @@ import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
 import dev.mkdev.portainerremote.data.HostRepository
 import dev.mkdev.portainerremote.data.store.ServerStore
+import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostKind
+import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.NetRate
 import dev.mkdev.portainerremote.domain.ScheduledOff
 import dev.mkdev.portainerremote.domain.Server
 import kotlinx.coroutines.async
@@ -36,6 +39,10 @@ data class HostUi(
     /** Identifiants des applications pour lesquelles l'hote annonce une mise a jour. */
     val upgradable: Set<String> = emptySet(),
     val usage: HostUsage = HostUsage(),
+    val machine: HostMachine = HostMachine(),
+    val diskSleep: DiskSleep? = null,
+    /** Vide tant qu'une seule mesure existe : un debit demande deux points. */
+    val rates: List<NetRate> = emptyList(),
     val scheduledOff: ScheduledOff? = null,
     val savingSchedule: Boolean = false,
     val busyApp: String? = null,
@@ -111,9 +118,12 @@ class HostViewModel(
             val usage = async { hosts.usage(hostId) }
             val schedule = async { hosts.scheduledOff(hostId) }
             val upgradable = async { hosts.upgradable(hostId) }
-            awaitAll(apps, usage, schedule, upgradable)
+            val machine = async { hosts.machine(hostId) }
+            val sleep = async { hosts.diskSleep(hostId) }
+            awaitAll(apps, usage, schedule, upgradable, machine, sleep)
 
             val appsResult = apps.await()
+            val fresh = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage()
             _ui.update { state ->
                 state.copy(
                     loading = false,
@@ -121,7 +131,12 @@ class HostViewModel(
                     // Ne pas savoir qu'une mise a jour existe n'empeche rien :
                     // un echec ici laisse simplement la liste vide.
                     upgradable = (upgradable.await() as? ApiResult.Ok)?.value ?: emptySet(),
-                    usage = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage(),
+                    // L'identite de la machine ne change pas : on garde la
+                    // derniere connue plutot que de la faire clignoter.
+                    machine = (machine.await() as? ApiResult.Ok)?.value ?: state.machine,
+                    diskSleep = (sleep.await() as? ApiResult.Ok)?.value ?: state.diskSleep,
+                    rates = ratesBetween(state.usage, fresh),
+                    usage = fresh,
                     // Une extinction programmee absente n'est pas une erreur :
                     // tous les systemes ne la proposent pas.
                     scheduledOff = (schedule.await() as? ApiResult.Ok)?.value,
@@ -301,6 +316,28 @@ class HostViewModel(
                     },
                 )
             }
+        }
+    }
+
+    /**
+     * Le debit, deduit de deux mesures successives.
+     *
+     * L'ecart de temps vient de l'horloge de l'appareil, pas de l'hote : le
+     * champ de temps de l'hote existe mais son unite n'a pas ete mesuree, et un
+     * debit calcule sur une unite supposee serait faux sans le dire. Un
+     * compteur qui recule - l'hote a redemarre - est ignore plutot qu'affiche
+     * en negatif.
+     */
+    private fun ratesBetween(before: HostUsage, after: HostUsage): List<NetRate> {
+        val elapsed = after.takenAt - before.takenAt
+        if (before.takenAt <= 0L || elapsed < 1_000L) return emptyList()
+        val seconds = elapsed / 1000.0
+        return after.network.mapNotNull { now ->
+            val past = before.network.firstOrNull { it.name == now.name } ?: return@mapNotNull null
+            val sent = now.sentBytes - past.sentBytes
+            val received = now.receivedBytes - past.receivedBytes
+            if (sent < 0 || received < 0) null
+            else NetRate(now.name, (sent / seconds).toLong(), (received / seconds).toLong())
         }
     }
 

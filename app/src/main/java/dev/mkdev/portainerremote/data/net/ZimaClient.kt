@@ -1,10 +1,13 @@
 package dev.mkdev.portainerremote.data.net
 
 import dev.mkdev.portainerremote.core.ApiResult
+import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.NetCounters
 import dev.mkdev.portainerremote.domain.ScheduledOff
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -28,6 +31,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
@@ -379,6 +383,10 @@ class ZimaClient(
         val body = parse(response.bodyAsText()) as? JsonObject
             ?: return@attempt ApiResult.Ok(HostUsage())
         val data = body["data"] as? JsonObject ?: body
+        val memory = data["mem"] as? JsonObject ?: data["memory"] as? JsonObject
+        val disk = data["sys_disk"] as? JsonObject ?: data["disk"] as? JsonObject
+        val cpu = data["cpu"] as? JsonObject
+
         ApiResult.Ok(
             HostUsage(
                 cpuPercent = data.percent("cpu"),
@@ -387,8 +395,72 @@ class ZimaClient(
                 // size : viser disk/total, c'est une jauge vide qui ne dit
                 // jamais pourquoi. Les autres noms restent acceptes.
                 diskPercent = data.percent("sys_disk", "disk", "storage"),
+                cpuTemperature = cpu?.long("temperature")?.toInt() ?: -1,
+                diskHealthy = (disk?.get("health") as? JsonPrimitive)?.booleanOrNull,
+                memoryUsedBytes = memory?.long("used") ?: -1L,
+                memoryTotalBytes = memory?.long("total") ?: -1L,
+                diskUsedBytes = disk?.long("used") ?: -1L,
+                diskTotalBytes = disk?.long("size") ?: disk?.long("total") ?: -1L,
+                network = readNetwork(data["net"]),
+                takenAt = System.currentTimeMillis(),
             ),
         )
+    }
+
+    /**
+     * Les compteurs reseau, interface par interface.
+     *
+     * On ne garde que celles qui ont vu passer quelque chose : une machine
+     * declare des interfaces virtuelles a zero octet, et les afficher noierait
+     * la seule qui interesse.
+     */
+    private fun readNetwork(node: JsonElement?): List<NetCounters> {
+        val array = node as? JsonArray ?: return emptyList()
+        return array.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            val name = obj.string("name") ?: return@mapNotNull null
+            val sent = obj.long("bytesSent") ?: obj.long("bytes_sent") ?: 0L
+            val received = obj.long("bytesRecv") ?: obj.long("bytes_recv") ?: 0L
+            if (sent <= 0L && received <= 0L) null else NetCounters(name, sent, received)
+        }
+    }
+
+    private fun JsonObject.long(key: String): Long? =
+        (this[key] as? JsonPrimitive)?.doubleOrNull?.toLong()
+
+    /**
+     * L'identite de la machine. Route propre a ZimaOS : un CasaOS repond 404,
+     * et la carte se contente alors de ce que la charge lui apprend.
+     */
+    override suspend fun machine(): ApiResult<HostMachine> = attempt {
+        val response = call(HttpMethod.Get, "/v2/zimaos/device/info")
+        if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
+        val body = parse(response.bodyAsText()) as? JsonObject
+            ?: return@attempt ApiResult.Ok(HostMachine())
+        val data = body["data"] as? JsonObject ?: body
+        val cpu = data["cpu"] as? JsonObject
+        val memory = data["memory"] as? JsonObject
+        ApiResult.Ok(
+            HostMachine(
+                model = data.string("device_model").orEmpty(),
+                name = data.string("device_name").orEmpty(),
+                osVersion = data.string("os_version").orEmpty(),
+                cpuModel = cpu?.string("model").orEmpty(),
+                cpuCores = cpu?.long("cores")?.toInt() ?: 0,
+                memoryTotalBytes = memory?.long("total_byte") ?: -1L,
+                memoryType = memory?.string("type").orEmpty(),
+            ),
+        )
+    }
+
+    override suspend fun diskSleep(): ApiResult<DiskSleep> = attempt {
+        val response = call(HttpMethod.Get, "/v2/local_storage/disk/sleep")
+        if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
+        val body = parse(response.bodyAsText()) as? JsonObject
+            ?: return@attempt ApiResult.Unsupported
+        val data = body["data"] as? JsonObject ?: body
+        val level = data.long("level")?.toInt() ?: return@attempt ApiResult.Unsupported
+        ApiResult.Ok(DiskSleep(level))
     }
 
     /**

@@ -2,9 +2,11 @@ package dev.mkdev.portainerremote.data.net
 
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.domain.Host
+import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostKind
+import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -37,6 +39,12 @@ interface HostClient {
     suspend fun upgrade(appId: String, appType: String): ApiResult<Int>
 
     suspend fun usage(): ApiResult<HostUsage>
+
+    /** Ce que la machine est : modele, systeme, processeur, memoire. */
+    suspend fun machine(): ApiResult<HostMachine>
+
+    /** Le delai avant mise en veille des disques, tel que l'hote le publie. */
+    suspend fun diskSleep(): ApiResult<DiskSleep>
 
     suspend fun scheduledOff(): ApiResult<ScheduledOff>
 
@@ -78,6 +86,8 @@ object UnsupportedHostClient : HostClient {
         ApiResult.Unsupported
 
     override suspend fun usage(): ApiResult<HostUsage> = ApiResult.Unsupported
+    override suspend fun machine(): ApiResult<HostMachine> = ApiResult.Unsupported
+    override suspend fun diskSleep(): ApiResult<DiskSleep> = ApiResult.Unsupported
     override suspend fun scheduledOff(): ApiResult<ScheduledOff> = ApiResult.Unsupported
     override suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int> =
         ApiResult.Unsupported

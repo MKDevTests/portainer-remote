@@ -268,7 +268,10 @@ dont on ne sait rien.
 
 Une fois connecté, il donne :
 
-- la charge de la machine — processeur, mémoire, disque, temps d'allumage ;
+- la charge de la machine — processeur, mémoire, disque système ;
+- une carte **Santé** : modèle, version du système, processeur, température,
+  mémoire et disque en octets, santé du disque, délai de mise en veille des
+  disques, et le débit réseau par interface ;
 - la liste des applications gérées par l'hôte : démarrer, arrêter, relancer, et
   mettre à jour celles pour lesquelles l'hôte annonce une nouvelle version ;
 - le choix de celle qui héberge Portainer, pour la relancer depuis ici le jour
