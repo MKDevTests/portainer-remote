@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.SystemUpdate
@@ -51,6 +52,7 @@ fun ServersScreen(
     onAdd: () -> Unit,
     onOpenUpdates: () -> Unit,
     onOpenBackup: () -> Unit,
+    onOpenHost: (String) -> Unit,
 ) {
     val servers by viewModel.servers.collectAsState()
     val update by viewModel.update.collectAsState()
@@ -181,6 +183,15 @@ fun ServersScreen(
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            // L'hote se rejoint depuis ici, et pas depuis
+                            // l'ecran des stacks : le jour ou il sert vraiment,
+                            // c'est parce que Portainer ne repond plus.
+                            IconButton(onClick = { onOpenHost(server.id) }) {
+                                Icon(
+                                    Icons.Default.Dns,
+                                    contentDescription = "Hôte de " + server.label,
                                 )
                             }
                             IconButton(onClick = { onEdit(server.id) }) {
