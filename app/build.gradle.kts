@@ -28,8 +28,8 @@ android {
         applicationId = "dev.mkdev.portainerremote"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.0"
+        versionCode = 11
+        versionName = "1.1.0"
 
         // Depot consulte pour les mises a jour. Un fork ne change que cette
         // ligne : rien d'autre dans le code ne nomme le depot.

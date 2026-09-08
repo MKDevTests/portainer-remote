@@ -33,6 +33,7 @@ en géométrie téléphone et en géométrie tablette.
 | Choix manuel du port de raccourci | fait |
 | Onglet Favoris, en raccourcis ou en détaillé | fait |
 | Noms personnalisés et descriptions | fait |
+| Hôte ZimaOS / CasaOS, optionnel et détecté | fait |
 
 ### Mises à jour
 
@@ -241,6 +242,37 @@ stockage. L'import restaure par-dessus la configuration en place en conservant
 les identifiants, donc réimporter deux fois la même sauvegarde ne crée pas de
 doublons.
 
+### Hôte ZimaOS ou CasaOS
+
+Portainer ne peut pas se relancer lui-même : il tourne dans un conteneur. Quand
+il est arrêté, l'application n'a plus d'interlocuteur. Si le NAS tourne sous
+**ZimaOS** ou **CasaOS**, la couche du dessous, elle, répond encore.
+
+L'icône **Hôte** sur chaque carte de serveur ouvre cet écran. Il est
+**entièrement optionnel** : sans adresse configurée, rien ne change et
+l'application reste utilisable avec n'importe quel Portainer, sur une machine
+qui n'a jamais entendu parler de ZimaOS.
+
+Une fois connecté, il donne :
+
+- la charge de la machine — processeur, mémoire, disque, temps d'allumage ;
+- la liste des applications gérées par l'hôte, démarrables et arrêtables ;
+- le choix de celle qui héberge Portainer, pour la relancer depuis ici le jour
+  où Portainer ne répond plus ;
+- l'extinction programmée, **en lecture seule** ;
+- redémarrer et éteindre la machine, avec confirmation.
+
+Les routes ne sont pas devinées. L'interface de ZimaOS est servie par des
+clients d'API générés, où chaque chemin et chaque verbe figurent en clair ;
+`probe/probe-zima.ps1` les extrait sans le moindre identifiant. Le corps attendu
+par la route de statut a été vérifié dans la spécification publique de
+CasaOS-AppManagement : une chaîne JSON nue, `"start"`, `"restart"` ou `"stop"`,
+et non un objet.
+
+L'extinction programmée n'est pas modifiable parce que le corps de sa requête
+n'a pas été vérifié. Envoyer une supposition à une route qui éteint une machine
+serait une mauvaise façon de la découvrir.
+
 ## Cinq règles de conception
 
 L'application ne suppose jamais rien de l'instance à laquelle elle parle.
@@ -345,6 +377,24 @@ export GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"
   explicitement** dès qu'une adresse `http://` non locale est saisie.
 - Les scripts de sondage demandent le jeton au clavier et ne l'écrivent jamais,
   ni en argument, ni en fichier, ni dans l'historique du terminal.
+
+Pour l'hôte ZimaOS, dont le mot de passe ouvre la machine entière et non le seul
+Portainer :
+
+- Le mot de passe est scellé par la **même clé du Keystore**, et **n'entre pas
+  dans les sauvegardes exportées** — une sauvegarde égarée ne donne pas le NAS.
+- Le jeton de session vit en mémoire et disparaît avec le processus.
+- Rien n'est envoyé avant d'avoir reconnu l'hôte : la connexion commence par une
+  requête **sans identifiants**, et le mot de passe n'est transmis que si la
+  réponse prouve qu'un ZimaOS ou un CasaOS se trouve bien à cette adresse. Un
+  serveur web quelconque qui répond `200` à tout ne l'obtient pas.
+- Une seule tentative de connexion à la fois, et **une pause d'une minute après
+  un refus** : un mot de passe changé sur le NAS ne déclenche pas une rafale
+  d'échecs à chaque rafraîchissement, donc pas de compte bloqué.
+- Un appel qui reçoit `401` est rejoué au plus deux fois — la convention
+  d'en-tête, puis le jeton — jamais en boucle.
+- L'adresse de l'hôte est avertie en `http://` non local, comme celle de
+  Portainer.
 
 ## Outils
 

@@ -19,6 +19,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -71,40 +73,78 @@ class ZimaClient(
     @Volatile
     private var bearer = false
 
+    /**
+     * Une seule connexion a la fois. L'ecran lance trois lectures en parallele :
+     * sans ce verrou, elles envoient trois fois le mot de passe pour obtenir
+     * trois jetons dont deux seront jetes.
+     */
+    private val loginLock = Mutex()
+
+    /**
+     * Instant du dernier refus d'identifiants.
+     *
+     * Un mot de passe refuse ne devient pas correct parce qu'on le renvoie. Le
+     * reproposer a chaque rafraichissement, c'est faire compter les echecs a
+     * l'hote - et sur un NAS, une suite d'echecs finit par bloquer le compte.
+     * On s'abstient donc pendant un moment, et l'ecran de reglages, lui, part
+     * d'un client neuf : reessayer a la main reste immediat.
+     */
+    @Volatile
+    private var rejectedAt = 0L
+
     // ------------------------------------------------------------- transport
 
+    private suspend fun send(
+        method: HttpMethod,
+        path: String,
+        body: JsonElement?,
+        jwt: String?,
+    ): HttpResponse = http.request(root + path) {
+        this.method = method
+        jwt?.let { header("Authorization", if (bearer) "Bearer $it" else it) }
+        if (body != null) {
+            contentType(ContentType.Application.Json)
+            setBody(body.toString())
+        }
+    }
+
+    /**
+     * Un appel, et au plus deux rejeux : la convention d'en-tete, puis le jeton.
+     *
+     * Le nombre est borne volontairement. Une boucle qui se reconnecte a chaque
+     * 401 transforme un mot de passe change en rafale de tentatives.
+     */
     private suspend fun call(
         method: HttpMethod,
         path: String,
         body: JsonElement? = null,
-        retry: Boolean = true,
     ): HttpResponse {
         val jwt = ensureToken()
-        val response = http.request(root + path) {
-            this.method = method
-            jwt?.let { header("Authorization", if (bearer) "Bearer $it" else it) }
-            if (body != null) {
-                contentType(ContentType.Application.Json)
-                setBody(body.toString())
-            }
+        var response = send(method, path, body, jwt)
+        if (response.status.value != 401 || jwt == null) return response
+
+        // 1. Certaines versions veulent le jeton prefixe. On bascule une fois.
+        if (!bearer) {
+            bearer = true
+            response = send(method, path, body, jwt)
+            if (response.status.value != 401) return response
         }
-        // Un jeton expire, ou la mauvaise convention d'en-tete : on rejoue une
-        // fois en basculant, sans rien demander a l'utilisateur.
-        if (response.status.value == 401 && retry) {
-            if (jwt != null && !bearer) {
-                bearer = true
-                return call(method, path, body, retry = false)
-            }
-            token = null
-            bearer = false
-            return call(method, path, body, retry = false)
-        }
-        return response
+
+        // 2. Jeton expire. On n'invalide que celui qu'on vient d'utiliser : un
+        //    appel voisin a pu en obtenir un neuf entre-temps.
+        loginLock.withLock { if (token == jwt) token = null }
+        val fresh = ensureToken() ?: return response
+        if (fresh == jwt) return response
+        return send(method, path, body, fresh)
     }
 
-    private suspend fun ensureToken(): String? {
-        token?.let { return it }
-        if (username.isBlank()) return null
+    private suspend fun ensureToken(): String? = loginLock.withLock {
+        token?.let { return@withLock it }
+        // Un identifiant ou un mot de passe vide n'ouvre aucune session : autant
+        // ne pas l'envoyer sur le reseau.
+        if (username.isBlank() || password.isEmpty()) return@withLock null
+        if (System.currentTimeMillis() - rejectedAt < REJECT_PAUSE_MS) return@withLock null
+
         val response = http.request("$root/v1/users/login") {
             method = HttpMethod.Post
             contentType(ContentType.Application.Json)
@@ -115,10 +155,16 @@ class ZimaClient(
                 }.toString(),
             )
         }
-        if (!response.status.isSuccess()) return null
-        val payload = parse(response.bodyAsText()) ?: return null
+        if (response.status.value == 401 || response.status.value == 403) {
+            rejectedAt = System.currentTimeMillis()
+            return@withLock null
+        }
+        if (!response.status.isSuccess()) return@withLock null
+
+        val payload = parse(response.bodyAsText()) ?: return@withLock null
         token = findString(payload, setOf("access_token", "token"))?.takeIf { it.length > 8 }
-        return token
+        if (token == null) rejectedAt = System.currentTimeMillis()
+        token
     }
 
     private fun parse(text: String): JsonElement? =
@@ -173,7 +219,18 @@ class ZimaClient(
      */
     suspend fun detect(): Boolean = runCatching {
         val response = http.request("$root/v1/sys/utilization") { method = HttpMethod.Get }
-        response.status.value != 404 && response.status.value < 500
+        when (response.status.value) {
+            // Une route protegee qui refuse l'acces prouve qu'elle existe.
+            401, 403 -> true
+            // Un 200 ne suffit pas : n'importe quel serveur web repond 200 a
+            // n'importe quoi. On exige une charge utile de la forme attendue,
+            // sans quoi on refuserait d'aller plus loin - et on eviterait donc
+            // d'envoyer le mot de passe a un hote qui n'est pas celui-la.
+            200 -> (parse(response.bodyAsText()) as? JsonObject)
+                ?.let { "data" in it || "success" in it } == true
+
+            else -> false
+        }
     }.getOrDefault(false)
 
     /** Teste les identifiants. Le jeton obtenu reste en memoire. */
@@ -318,5 +375,10 @@ class ZimaClient(
 
     fun close() {
         runCatching { http.close() }
+    }
+
+    private companion object {
+        /** Assez long pour ne pas marteler l'hote, assez court pour un mot de passe corrige. */
+        const val REJECT_PAUSE_MS = 60_000L
     }
 }

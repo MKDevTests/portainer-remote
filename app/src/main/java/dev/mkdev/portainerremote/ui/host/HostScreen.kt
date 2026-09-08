@@ -110,7 +110,7 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                         }
                         DropdownMenu(menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
-                                text = { Text("Oublier cet hôte") },
+                                text = { Text("Oublier cet hôte et son mot de passe") },
                                 onClick = {
                                     menuOpen = false
                                     viewModel.forget()
@@ -219,6 +219,15 @@ private fun SetupCard(
     var user by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
 
+    // Le mot de passe d'un NAS vaut plus que le jeton d'un Portainer : il ouvre
+    // la machine entiere. En http il part en clair dans le corps de la requete,
+    // et l'utilisateur doit le savoir au moment ou il le tape, pas apres.
+    val trimmed = url.trim()
+    val cleartext = trimmed.startsWith("http://") &&
+        !trimmed.startsWith("http://localhost") &&
+        !trimmed.startsWith("http://127.0.0.1") &&
+        !trimmed.startsWith("http://10.0.2.2")
+
     Card(Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -228,7 +237,9 @@ private fun SetupCard(
             Text(
                 "Si ce Portainer tourne sur un NAS ZimaOS ou CasaOS, l'application peut " +
                     "aussi relancer Portainer lui-même et éteindre la machine. " +
-                    "Sans cette étape, rien ne change.",
+                    "Sans cette étape, rien ne change.\n\n" +
+                    "Le mot de passe est scellé par le Keystore Android, comme le jeton " +
+                    "Portainer. Il n'est pas inclus dans les sauvegardes exportées.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -239,6 +250,15 @@ private fun SetupCard(
                 label = { Text("Adresse de l'interface ZimaOS") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                isError = cleartext,
+                supportingText = if (!cleartext) null else {
+                    {
+                        Text(
+                            "En http, ton mot de passe part en clair sur le réseau. " +
+                                "Acceptable sur ton LAN ou via un VPN, à éviter ailleurs.",
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
@@ -260,7 +280,8 @@ private fun SetupCard(
 
             Button(
                 onClick = { onConnect(url, user, password) },
-                enabled = !testing && url.isNotBlank() && user.isNotBlank(),
+                enabled = !testing && url.isNotBlank() && user.isNotBlank() &&
+                    password.isNotEmpty(),
                 modifier = Modifier.align(Alignment.End),
             ) {
                 Text(if (testing) "Connexion…" else "Tester et enregistrer")
