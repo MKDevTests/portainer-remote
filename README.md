@@ -350,7 +350,15 @@ export GRADLE_OPTS="-Djavax.net.ssl.trustStoreType=Windows-ROOT"
 
 `probe/probe.ps1` interroge une instance en lecture seule et archive les
 réponses JSON, en comparant au passage le poids avec et sans
-`excludeSnapshots`. `probe/probe-actions.ps1` valide les routes d'action et le
+`excludeSnapshots`.
+
+`probe/probe-zima.ps1` sonde une instance ZimaOS ou CasaOS. Sa première phase
+ne demande aucun identifiant : l'interface de ZimaOS est une application Vue
+dont les clients d'API sont générés, si bien que **chaque route figure en clair
+dans les fichiers JavaScript**. Les extraire évite d'avoir à en deviner une
+seule. La seconde phase, optionnelle, se connecte et interroge en lecture seule
+les routes sans paramètre ; le mot de passe est saisi au clavier et le jeton
+obtenu n'est jamais écrit sur le disque. `probe/probe-actions.ps1` valide les routes d'action et le
 format des logs ; il arrête puis redémarre un stack, et refuse donc de
 s'exécuter ailleurs que sur `localhost` sans `-Force` explicite.
 
