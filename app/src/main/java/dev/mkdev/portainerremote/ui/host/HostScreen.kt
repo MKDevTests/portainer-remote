@@ -450,9 +450,9 @@ private fun SetupCard(
 
                         HostKind.SYNOLOGY ->
                             "Adresse de DSM, port 5000 en clair ou 5001 en TLS. " +
-                                "Lecture seule pour l'instant : charge, disques, veille et " +
-                                "journal. Ni extinction ni redémarrage, leurs commandes " +
-                                "n'ont pas été mesurées."
+                                "Charge, disques, conteneurs, journal, plus l'extinction et " +
+                                "le redémarrage. Les conteneurs sont en lecture seule, et " +
+                                "aucune extinction ne se programme depuis ici."
 
                         HostKind.QNAP -> ""
                     },

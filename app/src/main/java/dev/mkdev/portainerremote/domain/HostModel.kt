@@ -46,6 +46,10 @@ enum class HostKind(
         label = "Synology DSM",
         supported = true,
         canSeeApps = true,
+        // Eteindre et redemarrer, oui. Programmer une extinction, non : la
+        // demande etait « juste redemarrer et eteindre d'un coup », et une
+        // capacite qu'on n'utilise pas est une surface de bug en plus.
+        canPower = true,
         hasJournal = true,
     ),
 

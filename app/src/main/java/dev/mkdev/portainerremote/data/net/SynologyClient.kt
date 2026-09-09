@@ -638,13 +638,58 @@ class SynologyClient(
         ApiResult.Unsupported
 
     /**
-     * Eteindre et redemarrer existent chez DSM, et ne sont pas branches.
+     * Eteindre ou redemarrer, tout de suite.
      *
-     * Les methodes d'ecriture n'ont pas ete mesurees : les essayer, c'est
-     * risquer d'eteindre un NAS pour verifier qu'on sait l'eteindre. Elles
-     * viendront quand elles auront ete sondees.
+     * Ces deux methodes sont les seules de l'application qui n'ont pas pu etre
+     * mesurees avant d'etre ecrites : les sonder, c'est les executer. Il n'y a
+     * pas d'essai a blanc chez DSM, et un NAS eteint pour verifier qu'on sait
+     * l'eteindre reste eteint. Le premier appui est donc le premier test - d'ou
+     * la confirmation demandee a l'ecran, qui n'est pas une politesse.
+     *
+     * Trois choix decoulent de cette incertitude :
+     *
+     *   - la version 1 est demandee explicitement, et non la plus haute que DSM
+     *     declare : ces methodes y vivent depuis toujours, et une version plus
+     *     recente pourrait les avoir deplacees ;
+     *   - aucun reessai. Ailleurs un appel se rejoue apres une session expiree ;
+     *     ici, rejouer pourrait redemarrer deux fois - la seconde en pleine
+     *     extinction ;
+     *   - une reponse qui n'arrive jamais vaut succes. Un NAS qui s'eteint
+     *     coupe la connexion avant de repondre : appeler cela un echec ferait
+     *     appuyer une deuxieme fois.
      */
-    override suspend fun power(action: HostPower): ApiResult<Int> = ApiResult.Unsupported
+    override suspend fun power(action: HostPower): ApiResult<Int> = attempt {
+        if (!ensureSession()) return@attempt refused()
+        val api = catalogue()?.get("SYNO.Core.System") ?: return@attempt refused()
+        val token = sid ?: return@attempt refused()
+
+        val method = when (action) {
+            HostPower.RESTART -> "reboot"
+            HostPower.OFF -> "shutdown"
+        }
+        val url = buildString {
+            append(root).append("/webapi/").append(api.path)
+            append("?api=SYNO.Core.System&version=1&method=").append(method)
+            append("&_sid=").append(token.encodeURLParameter())
+        }
+
+        val response = try {
+            http.get(url)
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (_: Throwable) {
+            // La machine est partie avant de repondre : c'est ce qu'on lui a
+            // demande de faire.
+            return@attempt ApiResult.Ok(200)
+        }
+
+        val body = parse(response.bodyAsText())
+        if (body?.succeeded() == true) return@attempt ApiResult.Ok(200)
+
+        val code = ((body?.get("error") as? JsonObject)?.get("code") as? JsonPrimitive)
+            ?.doubleOrNull?.toInt()
+        ApiResult.HttpError(code ?: response.status.value)
+    }
 
     override fun close() {
         sid = null
