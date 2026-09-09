@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dev.mkdev.portainerremote.BuildConfig
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.core.errorText
+import dev.mkdev.portainerremote.data.InstallReceiver
 import dev.mkdev.portainerremote.data.UpdateManager
 import dev.mkdev.portainerremote.data.net.ReleaseInfo
 import dev.mkdev.portainerremote.data.net.UpdateChecker
@@ -23,6 +24,9 @@ enum class UpdateStage {
     AVAILABLE,
     DOWNLOADING,
     READY,
+
+    /** Remise au systeme faite : c'est Android qui parle desormais. */
+    INSTALLING,
 }
 
 data class UpdatesUi(
@@ -48,6 +52,22 @@ class UpdatesViewModel(
 
     init {
         check()
+        // Ce que le systeme repond a une installation arrive ici, meme si
+        // l'utilisateur a quitte l'ecran entre-temps.
+        viewModelScope.launch {
+            InstallReceiver.messages.collect { message ->
+                _ui.update {
+                    it.copy(
+                        error = message,
+                        stage = if (it.stage == UpdateStage.INSTALLING) {
+                            UpdateStage.READY
+                        } else {
+                            it.stage
+                        },
+                    )
+                }
+            }
+        }
     }
 
     /** A rappeler au retour du reglage systeme : l'autorisation a pu changer. */
@@ -116,7 +136,19 @@ class UpdatesViewModel(
             manager.openInstallPermissionSettings()
             return
         }
-        manager.install(apk)
+        viewModelScope.launch {
+            _ui.update { it.copy(stage = UpdateStage.INSTALLING, error = null) }
+            val result = manager.install(apk)
+            if (result !is ApiResult.Ok) {
+                _ui.update {
+                    it.copy(
+                        stage = UpdateStage.READY,
+                        error = "Le système a refusé la remise du fichier : " +
+                            result.errorText(),
+                    )
+                }
+            }
+        }
     }
 
     fun openInstallPermissionSettings() = manager.openInstallPermissionSettings()

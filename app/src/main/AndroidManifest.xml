@@ -52,6 +52,14 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
+        <!--
+            Le verdict d'une session d'installation. Non exporté : l'intention
+            qui l'atteint est nominative, créée par l'application elle-même.
+        -->
+        <receiver
+            android:name=".data.InstallReceiver"
+            android:exported="false" />
+
         <!-- Widget d'écran d'accueil : le seul chemin en un tap. -->
         <receiver
             android:name=".widget.StackWidgetReceiver"

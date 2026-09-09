@@ -125,7 +125,11 @@ fun UpdatesScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
-                    UpdateStage.AVAILABLE, UpdateStage.DOWNLOADING, UpdateStage.READY -> Unit
+                    UpdateStage.AVAILABLE,
+                    UpdateStage.DOWNLOADING,
+                    UpdateStage.READY,
+                    UpdateStage.INSTALLING,
+                    -> Unit
                 }
 
                 val release = ui.release
@@ -168,6 +172,18 @@ fun UpdatesScreen(
                                             style = MaterialTheme.typography.labelMedium,
                                         )
                                     }
+                                }
+
+                                // Le fichier est remis au systeme : c'est lui
+                                // qui affiche sa confirmation, et lui qui dira
+                                // si ca s'est mal passe.
+                                UpdateStage.INSTALLING -> {
+                                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                                    Text(
+                                        "Remis à Android. Sa fenêtre de confirmation devrait " +
+                                            "s'ouvrir ; sinon, le motif du refus s'affichera ici.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
                                 }
 
                                 UpdateStage.READY -> {

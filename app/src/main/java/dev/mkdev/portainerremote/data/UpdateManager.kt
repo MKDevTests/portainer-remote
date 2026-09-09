@@ -1,11 +1,12 @@
 package dev.mkdev.portainerremote.data
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
-import androidx.core.content.FileProvider
 import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.data.net.ReleaseInfo
 import io.ktor.client.HttpClient
@@ -108,18 +109,63 @@ class UpdateManager(private val context: Context) {
         )
     }
 
-    fun install(apk: File) {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
-        context.startActivity(
-            Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            },
-        )
+    /**
+     * Remet l'APK au systeme, par une session d'installation.
+     *
+     * L'ancien chemin ouvrait une intention ACTION_VIEW sur le fichier. Quand
+     * Android ne l'honorait pas - ce qui arrive selon la version et le
+     * constructeur - il ne se passait rien : aucune fenetre, aucune erreur, et
+     * l'ecran continuait d'annoncer une mise a jour qui ne s'installait jamais.
+     *
+     * Une session rend toujours un verdict. Android affiche sa propre
+     * confirmation, comme avant - l'application n'installe rien elle-meme et ne
+     * le peut pas - mais cette fois le refus revient et peut etre affiche.
+     */
+    suspend fun install(apk: File): ApiResult<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val installer = context.packageManager.packageInstaller
+            val params = PackageInstaller.SessionParams(
+                PackageInstaller.SessionParams.MODE_FULL_INSTALL,
+            ).apply {
+                setAppPackageName(context.packageName)
+                runCatching { setSize(apk.length()) }
+            }
+
+            val sessionId = installer.createSession(params)
+            installer.openSession(sessionId).use { session ->
+                session.openWrite(NAME, 0, apk.length()).use { output ->
+                    apk.inputStream().use { input -> input.copyTo(output) }
+                    session.fsync(output)
+                }
+
+                // FLAG_MUTABLE est obligatoire : c'est le systeme qui remplit
+                // cette intention avec le statut et, au besoin, son ecran de
+                // confirmation. Immuable, elle reviendrait vide.
+                val callback = PendingIntent.getBroadcast(
+                    context,
+                    sessionId,
+                    Intent(InstallReceiver.ACTION).setPackage(context.packageName)
+                        .setClass(context, InstallReceiver::class.java),
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                )
+                session.commit(callback.intentSender)
+            }
+            Log.d(TAG, "session $sessionId remise au systeme")
+            ApiResult.Ok(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "installation impossible : ${e::class.simpleName} ${e.message}")
+            ApiResult.NetworkError(
+                e.message ?: e::class.simpleName ?: "installation refusée par le système",
+            )
+        }
     }
 
     private companion object {
         const val TAG = "UpdateManager"
+
+        /** Nom du flux dans la session. Sans importance pour le systeme. */
+        const val NAME = "portainer-remote"
     }
 }
