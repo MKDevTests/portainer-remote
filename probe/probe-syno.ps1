@@ -399,6 +399,51 @@ try {
     }
   }
 
+  # ------------------------------------------------------- mise a jour DSM
+  #
+  # Deux API, et une prudence : la famille SYNO.Core.Upgrade contient aussi de
+  # quoi telecharger et installer. Les methodes appelees ici sont nommees une
+  # par une - « status », « check », « get », « load » - et aucune autre ne le
+  # sera. Ni « start », ni « download », ni « install ».
+  #
+  # « check » est ce que fait le bouton « Verifier les mises a jour » de DSM :
+  # il interroge le serveur de Synology, il n'installe rien.
+  $maj = @(
+    @{ api = 'SYNO.Core.Upgrade';        methodes = @('status', 'get');   nom = 'maj_etat' },
+    @{ api = 'SYNO.Core.Upgrade.Server'; methodes = @('check', 'get');    nom = 'maj_disponible' },
+    @{ api = 'SYNO.Core.Upgrade.Setting'; methodes = @('get', 'load');    nom = 'maj_reglages' }
+  )
+
+  Write-Host ""
+  Write-Host "  Mise a jour du systeme (lecture seule)" -ForegroundColor Cyan
+  foreach ($m in $maj) {
+    $cible = Find-Api $m.api
+    if (-not $cible) {
+      Write-Host ("  absent   {0}" -f $m.api) -ForegroundColor DarkGray
+      continue
+    }
+
+    $repondu = $false
+    foreach ($methode in $m.methodes) {
+      if ($repondu) { break }
+      $uri = "{0}/webapi/{1}?api={2}&version={3}&method={4}&_sid={5}" -f `
+             $BaseUrl, $cible.path, $m.api, $cible.maxVer, $methode, [uri]::EscapeDataString($sid)
+      try {
+        $r = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec 30
+        if ($r.success) {
+          Write-Safe $r $m.nom
+          Write-Host ("  OK       {0} / {1}" -f $m.api, $methode) -ForegroundColor Green
+          $report += "OK       {0} / {1}  (v{2})" -f $m.api, $methode, $cible.maxVer
+          $repondu = $true
+        }
+      } catch { }
+    }
+    if (-not $repondu) {
+      Write-Host ("  aucune methode de lecture acceptee : {0}" -f $m.api) -ForegroundColor DarkYellow
+      $report += "refus    {0}" -f $m.api
+    }
+  }
+
   $report | Out-File (Join-Path $out "sondage.txt") -Encoding utf8
   Write-Host ""
   Write-Host ("Termine. Resultats dans {0}" -f $out) -ForegroundColor Green

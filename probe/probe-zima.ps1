@@ -239,7 +239,11 @@ try {
     '/v2/local_storage/disk',
     '/v2/local_storage/disk/info',
     '/v2/local_storage/storage',
-    '/v2/local_storage/usage'
+    '/v2/local_storage/usage',
+    # La version installee, et celle qui existe. Les deux routes figurent dans
+    # le JavaScript sous le service d'installation ; seule leur base manquait.
+    '/v2/installer/release/current',
+    '/v2/installer/release/latest'
   )
 
   $targets = @($concrete) + @($questions) | Select-Object -Unique
