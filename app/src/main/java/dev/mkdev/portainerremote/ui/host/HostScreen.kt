@@ -236,7 +236,7 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                     items(ui.apps, key = { it.id }) { app ->
                         AppRow(
                             app = app,
-                            isPortainer = app.id == host.portainerAppId,
+                            isPortainer = host.isPortainerApp(app.id),
                             busy = ui.busyApp == app.id,
                             upgradable = app.id in ui.upgradable,
                             onChoose = { viewModel.choosePortainerApp(app.id) },

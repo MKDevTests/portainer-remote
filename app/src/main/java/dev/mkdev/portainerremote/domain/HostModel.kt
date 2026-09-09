@@ -38,6 +38,22 @@ data class Host(
 ) {
     val configured: Boolean get() = baseUrl.isNotBlank() && username.isNotBlank()
 
+    /**
+     * Reconnait l'application qui heberge Portainer.
+     *
+     * L'hote a change la forme de ses identifiants d'une version a l'autre :
+     * ce qu'il appelait « portainer » s'appelle desormais
+     * « zimaapp://v2app/portainer ». Un choix fait avant ce changement reste un
+     * choix : le dernier segment le retrouve, et le rafraichissement le reecrit
+     * ensuite sous sa forme actuelle.
+     */
+    fun isPortainerApp(appId: String): Boolean =
+        portainerAppId.isNotBlank() &&
+            (
+                appId == portainerAppId ||
+                    appId.substringAfterLast('/') == portainerAppId.substringAfterLast('/')
+                )
+
     /** Ce qu'on affiche : le nom donne, sinon l'adresse, qui identifie toujours. */
     val title: String get() = label.ifBlank { baseUrl.removePrefix("http://").removePrefix("https://") }
 }

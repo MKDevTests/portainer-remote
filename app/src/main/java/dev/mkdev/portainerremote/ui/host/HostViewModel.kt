@@ -55,7 +55,7 @@ data class HostUi(
     /** L'ecran de saisie s'affiche tant qu'aucun NAS n'est configure, ou sur demande. */
     val setup: Boolean get() = adding || selected == null
 
-    val portainerApp: HostApp? get() = apps.firstOrNull { it.id == selected?.portainerAppId }
+    val portainerApp: HostApp? get() = apps.firstOrNull { selected?.isPortainerApp(it.id) == true }
 }
 
 /**
@@ -150,6 +150,7 @@ class HostViewModel(
                     message = if (appsResult is ApiResult.Ok) state.message else appsResult.errorText(),
                 )
             }
+            realignPortainerApp()
         }
     }
 
@@ -346,6 +347,18 @@ class HostViewModel(
             if (sent < 0 || received < 0) null
             else NetRate(now.name, (sent / seconds).toLong(), (received / seconds).toLong())
         }
+    }
+
+    /**
+     * Reecrit l'identifiant de l'application Portainer quand l'hote a change sa
+     * forme. Sans cela, la relance enverrait un identifiant que l'hote ne
+     * connait plus, et echouerait sans dire pourquoi.
+     */
+    private suspend fun realignPortainerApp() {
+        val host = _ui.value.selected ?: return
+        val app = _ui.value.portainerApp ?: return
+        if (app.id == host.portainerAppId) return
+        hosts.save(host.copy(portainerAppId = app.id), null)
     }
 
     fun dismissMessage() = _ui.update { it.copy(message = null) }
