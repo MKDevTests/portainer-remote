@@ -73,6 +73,47 @@ function Write-Safe($object, $name) {
   $json | Out-File (Join-Path $out "$name.json") -Encoding utf8
 }
 
+# Pour les journaux, on n'ecrit pas les valeurs : seulement la forme.
+#
+# Un journal de connexions nomme des personnes, des adresses, des machines.
+# Pour ecrire l'application, savoir qu'un champ « user » existe et qu'il porte
+# du texte suffit ; savoir qui il nomme ne sert a rien. Cette fonction rend donc
+# l'arborescence des champs et le type de chacun, jamais leur contenu.
+function Get-Shape($node, $prefix, $acc) {
+  if ($null -eq $node) { [void]$acc.Add("$prefix : null"); return }
+
+  if ($node -is [System.Collections.IEnumerable] -and $node -isnot [string]) {
+    $items = @($node)
+    [void]$acc.Add("$prefix[] : $($items.Count) entrees")
+    if ($items.Count -gt 0) { Get-Shape $items[0] "$prefix[]" $acc }
+    return
+  }
+
+  if ($node -is [psobject] -and $node.PSObject.Properties.Name.Count -gt 0 -and
+      $node -isnot [string] -and $node -isnot [int] -and $node -isnot [bool]) {
+    foreach ($prop in $node.PSObject.Properties) {
+      $chemin = $prop.Name
+      if ($prefix) { $chemin = "$prefix.$($prop.Name)" }
+      Get-Shape $prop.Value $chemin $acc
+    }
+    return
+  }
+
+  $type = switch ($node.GetType().Name) {
+    "String"  { "texte ($($node.Length) car.)" }
+    "Boolean" { "booleen" }
+    default   { "nombre" }
+  }
+  [void]$acc.Add("$prefix : $type")
+}
+
+function Write-Shape($object, $name) {
+  $acc = New-Object System.Collections.ArrayList
+  Get-Shape $object "" $acc
+  $acc | Out-File (Join-Path $out "$name`_forme.txt") -Encoding utf8
+  Write-Host ("        forme : {0} champs, valeurs non ecrites" -f $acc.Count) -ForegroundColor DarkGray
+}
+
 function Read-Error($response) {
   if ($response -and $response.error -and $response.error.code) { return [int]$response.error.code }
   return 0
@@ -289,6 +330,53 @@ try {
     } catch {
       $report += "echec    {0} / {1}  {2}" -f $q.api, $q.method, $_.Exception.Message
       Write-Host ("  echec    {0} / {1}" -f $q.api, $q.method) -ForegroundColor DarkGray
+    }
+  }
+
+  # ------------------------------------------------------------- journaux
+  #
+  # Ce que le catalogue a revele : DSM publie bien ce que ZimaOS et Portainer CE
+  # n'ont pas. Quatre API, et le nom de leur methode n'est ecrit nulle part - on
+  # essaie donc les trois verbes de lecture, dans l'ordre, et on s'arrete au
+  # premier qui repond.
+  #
+  # Aucun autre verbe n'est tente : « list », « get » et « load » ne modifient
+  # rien. Et seule la forme est ecrite, jamais les valeurs : ces reponses
+  # nomment des personnes et des adresses.
+  $journaux = @(
+    @{ api = 'SYNO.Core.CurrentConnection';        nom = 'connexions_en_cours' },
+    @{ api = 'SYNO.SecurityAdvisor.LoginActivity'; nom = 'activite_connexion' },
+    @{ api = 'SYNO.Core.SyslogClient.Log';         nom = 'journal_systeme' },
+    @{ api = 'SYNO.Core.Security.AutoBlock';       nom = 'adresses_bloquees' }
+  )
+
+  Write-Host ""
+  Write-Host "  Journaux (forme seulement, aucune valeur ecrite)" -ForegroundColor Cyan
+  foreach ($j in $journaux) {
+    $cible = Find-Api $j.api
+    if (-not $cible) {
+      Write-Host ("  absent   {0}" -f $j.api) -ForegroundColor DarkGray
+      continue
+    }
+
+    $repondu = $false
+    foreach ($methode in @('list', 'get', 'load')) {
+      if ($repondu) { break }
+      $uri = "{0}/webapi/{1}?api={2}&version={3}&method={4}&limit=20&_sid={5}" -f `
+             $BaseUrl, $cible.path, $j.api, $cible.maxVer, $methode, [uri]::EscapeDataString($sid)
+      try {
+        $r = Invoke-RestMethod -Uri $uri -Method Get -TimeoutSec 20
+        if ($r.success) {
+          Write-Host ("  OK       {0} / {1}" -f $j.api, $methode) -ForegroundColor Green
+          Write-Shape $r.data $j.nom
+          $report += "OK       {0} / {1}  (forme seule)" -f $j.api, $methode
+          $repondu = $true
+        }
+      } catch { }
+    }
+    if (-not $repondu) {
+      Write-Host ("  aucune methode de lecture acceptee : {0}" -f $j.api) -ForegroundColor DarkYellow
+      $report += "refus    {0}  (list, get, load)" -f $j.api
     }
   }
 
