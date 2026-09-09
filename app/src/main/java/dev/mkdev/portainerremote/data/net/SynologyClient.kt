@@ -9,6 +9,7 @@ import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogEntry
 import dev.mkdev.portainerremote.domain.LogLevel
@@ -426,6 +427,36 @@ class SynologyClient(
         }
 
         ApiResult.Ok(result)
+    }
+
+    /**
+     * Ce que DSM sait d'une mise a jour de lui-meme.
+     *
+     * « check » est ce que fait le bouton « Verifier les mises a jour » de son
+     * interface : il interroge le serveur de Synology et rend un verdict. Il
+     * n'installe rien, et rien ici ne l'installera - poser une version de DSM
+     * redemarre la machine et coupe tous les conteneurs.
+     *
+     * La version installee vient de l'autre bout, « Core.System/info », parce
+     * que la reponse de « check » ne parle que de celle qui est disponible.
+     */
+    override suspend fun systemUpdate(): ApiResult<HostUpdate> = attempt {
+        val data = call("SYNO.Core.Upgrade.Server", "check")?.data()
+            ?: return@attempt refused()
+        val update = data["update"] as? JsonObject ?: return@attempt ApiResult.Ok(HostUpdate(known = true))
+
+        val details = update["version_details"] as? JsonObject
+        val installee = call("SYNO.Core.System", "info")?.data()?.string("firmware_ver").orEmpty()
+
+        ApiResult.Ok(
+            HostUpdate(
+                known = true,
+                available = update.bool("available") == true,
+                currentVersion = installee,
+                latestVersion = update.string("version").orEmpty(),
+                important = details?.bool("isSecurityVersion") == true,
+            ),
+        )
     }
 
     /** DSM compte en minutes d'inactivite : il n'y a rien a interpreter. */

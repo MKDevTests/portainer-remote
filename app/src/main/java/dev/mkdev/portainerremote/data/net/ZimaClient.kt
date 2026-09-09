@@ -8,6 +8,7 @@ import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.NetCounters
@@ -506,6 +507,42 @@ class ZimaClient(
                 )
             },
         )
+    }
+
+    /**
+     * La version installee et celle qui existe.
+     *
+     * ZimaOS les publie separement, et ne dit nulle part si l'une est plus
+     * recente que l'autre : la comparaison se fait sur les chaines, telles
+     * qu'il les ecrit. Deux chaines identiques valent « a jour » ; deux
+     * chaines differentes valent « une autre version existe » - ce qui reste
+     * vrai meme si l'hote propose un retour en arriere.
+     */
+    override suspend fun systemUpdate(): ApiResult<HostUpdate> = attempt {
+        val current = releaseVersion("/v2/installer/release/current")
+            ?: return@attempt ApiResult.Unsupported
+        val latest = releaseVersion("/v2/installer/release/latest")
+
+        ApiResult.Ok(
+            HostUpdate(
+                known = true,
+                available = latest != null && latest.version != current.version,
+                currentVersion = current.version,
+                latestVersion = latest?.version.orEmpty(),
+                important = latest?.important == true,
+            ),
+        )
+    }
+
+    private data class Release(val version: String, val important: Boolean)
+
+    private suspend fun releaseVersion(path: String): Release? {
+        val response = call(HttpMethod.Get, path)
+        if (!response.status.isSuccess()) return null
+        val body = parse(response.bodyAsText()) as? JsonObject ?: return null
+        val data = body["data"] as? JsonObject ?: body
+        val version = data.string("version")?.takeIf { it.isNotBlank() } ?: return null
+        return Release(version, (data["important"] as? JsonPrimitive)?.booleanOrNull == true)
     }
 
     override suspend fun diskSleep(): ApiResult<DiskSleep> = attempt {

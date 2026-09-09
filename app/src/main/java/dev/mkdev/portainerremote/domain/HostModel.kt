@@ -167,6 +167,24 @@ enum class SignIn {
     REFUSED,
 }
 
+/**
+ * L'etat des mises a jour du systeme de l'hote.
+ *
+ * L'application se contente de dire ce que la machine annonce. Elle
+ * n'installe rien : une mise a jour de systeme redemarre le NAS, coupe tous
+ * les conteneurs et peut echouer - cela se decide devant l'interface du NAS,
+ * pas au bout d'un doigt sur un telephone.
+ */
+data class HostUpdate(
+    /** Faux tant que l'hote ne s'est pas prononce : la carte n'apparait pas. */
+    val known: Boolean = false,
+    val available: Boolean = false,
+    val currentVersion: String = "",
+    val latestVersion: String = "",
+    /** L'hote signale une version de securite ou marquee importante. */
+    val important: Boolean = false,
+)
+
 /** Ce qu'une ligne de la carte decrit vraiment. */
 enum class DiskRole { VOLUME, DRIVE }
 

@@ -11,6 +11,7 @@ import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -200,6 +201,9 @@ class HostRepository(private val store: HostStore) {
      */
     suspend fun journal(hostId: String, level: LogLevel?, limit: Int): ApiResult<HostJournal> =
         withClient(hostId) { it.journal(level, limit) }
+
+    suspend fun systemUpdate(hostId: String): ApiResult<HostUpdate> =
+        withClient(hostId) { it.systemUpdate() }
 
     suspend fun diskSleep(hostId: String): ApiResult<DiskSleep> =
         withClient(hostId) { it.diskSleep() }

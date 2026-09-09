@@ -66,6 +66,7 @@ import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.NetRate
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -219,6 +220,10 @@ fun HostScreen(
 
                     item { IdentityCard(host, ui.servers) }
 
+                    if (ui.systemUpdate.available) {
+                        item { SystemUpdateCard(ui.systemUpdate) }
+                    }
+
                     item { UsageCard(ui.usage) }
 
                     if (ui.disks.isNotEmpty()) {
@@ -231,6 +236,7 @@ fun HostScreen(
                             machine = ui.machine,
                             diskSleep = ui.diskSleep,
                             rates = ui.rates,
+                            update = ui.systemUpdate,
                         )
                     }
 
@@ -633,6 +639,60 @@ private fun OtpCard(sending: Boolean, onSubmit: (String) -> Unit) {
 }
 
 /**
+ * Une version du systeme est disponible.
+ *
+ * La carte n'apparait que dans ce cas : quand tout est a jour, la ligne
+ * « Systeme » de la carte Sante le dit deja, et une carte de plus ne
+ * dirait rien.
+ *
+ * Aucun bouton n'installe. Une mise a jour de systeme redemarre le NAS et
+ * coupe tous les conteneurs : cela se decide devant sa propre interface, pas
+ * au bout d'un doigt sur un telephone qui ne verra pas si ca se passe mal.
+ */
+@Composable
+private fun SystemUpdateCard(update: HostUpdate) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (update.important) {
+                MaterialTheme.colorScheme.errorContainer
+            } else {
+                MaterialTheme.colorScheme.tertiaryContainer
+            },
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                if (update.important) {
+                    "Mise à jour de sécurité disponible"
+                } else {
+                    "Mise à jour du système disponible"
+                },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                buildString {
+                    if (update.currentVersion.isNotBlank()) {
+                        append(update.currentVersion)
+                        append(" → ")
+                    }
+                    append(update.latestVersion.ifBlank { "version inconnue" })
+                },
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Text(
+                "Elle s'installe depuis l'interface du NAS : elle le redémarre et " +
+                    "arrête tous les conteneurs.",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/**
  * Les disques, un par un.
  *
  * Un total ne dit pas lequel se remplit : c'est pourtant la seule question qui
@@ -743,10 +803,22 @@ private fun HealthCard(
     machine: HostMachine,
     diskSleep: DiskSleep?,
     rates: List<NetRate>,
+    update: HostUpdate,
 ) {
     val lines = buildList {
         if (machine.model.isNotBlank()) add("Modèle" to machine.model)
-        if (machine.osVersion.isNotBlank()) add("Système" to machine.osVersion)
+        if (machine.osVersion.isNotBlank()) {
+            // « a jour » n'est ecrit que si l'hote s'est prononce. Sans reponse
+            // de sa part, la ligne reste la version seule : affirmer qu'une
+            // machine est a jour sans le savoir serait pire que se taire.
+            add(
+                "Système" to if (update.known && !update.available) {
+                    "${machine.osVersion} · à jour"
+                } else {
+                    machine.osVersion
+                },
+            )
+        }
         if (machine.cpuModel.isNotBlank()) {
             add(
                 "Processeur" to if (machine.cpuCores > 0) {

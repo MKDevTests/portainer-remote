@@ -10,6 +10,7 @@ import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -64,6 +65,13 @@ interface HostClient {
 
     /** Les disques physiques, un par un. Vide quand l'hote n'en dit rien. */
     suspend fun disks(): ApiResult<List<HostDisk>>
+
+    /**
+     * Ce que l'hote dit de son propre systeme : version installee, version
+     * disponible. Lecture seule, toujours : l'application ne pose pas une mise
+     * a jour qui redemarrerait la machine.
+     */
+    suspend fun systemUpdate(): ApiResult<HostUpdate>
 
     /** Le delai avant mise en veille des disques, tel que l'hote le publie. */
     suspend fun diskSleep(): ApiResult<DiskSleep>
@@ -124,6 +132,7 @@ object UnsupportedHostClient : HostClient {
     override suspend fun disks(): ApiResult<List<HostDisk>> = ApiResult.Unsupported
     override suspend fun journal(level: LogLevel?, limit: Int): ApiResult<HostJournal> =
         ApiResult.Unsupported
+    override suspend fun systemUpdate(): ApiResult<HostUpdate> = ApiResult.Unsupported
     override suspend fun diskSleep(): ApiResult<DiskSleep> = ApiResult.Unsupported
     override suspend fun scheduledOff(): ApiResult<ScheduledOff> = ApiResult.Unsupported
     override suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int> =

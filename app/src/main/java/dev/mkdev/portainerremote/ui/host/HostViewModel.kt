@@ -14,6 +14,7 @@ import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
+import dev.mkdev.portainerremote.domain.HostUpdate
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.NetRate
 import dev.mkdev.portainerremote.domain.ScheduledOff
@@ -43,6 +44,7 @@ data class HostUi(
     val usage: HostUsage = HostUsage(),
     val machine: HostMachine = HostMachine(),
     val disks: List<HostDisk> = emptyList(),
+    val systemUpdate: HostUpdate = HostUpdate(),
     val diskSleep: DiskSleep? = null,
     /** Vide tant qu'une seule mesure existe : un debit demande deux points. */
     val rates: List<NetRate> = emptyList(),
@@ -128,6 +130,7 @@ class HostViewModel(
                 usage = HostUsage(),
                 machine = HostMachine(),
                 disks = emptyList(),
+                systemUpdate = HostUpdate(),
                 diskSleep = null,
                 rates = emptyList(),
                 scheduledOff = null,
@@ -157,7 +160,8 @@ class HostViewModel(
             val machine = async { hosts.machine(hostId) }
             val sleep = async { hosts.diskSleep(hostId) }
             val disks = async { hosts.disks(hostId) }
-            awaitAll(apps, usage, schedule, upgradable, machine, sleep, disks)
+            val systemUpdate = async { hosts.systemUpdate(hostId) }
+            awaitAll(apps, usage, schedule, upgradable, machine, sleep, disks, systemUpdate)
 
             val appsResult = apps.await()
             val fresh = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage()
@@ -176,6 +180,10 @@ class HostViewModel(
                     // on garde la derniere liste connue plutot qu'une carte vide.
                     disks = (disks.await() as? ApiResult.Ok)?.value?.takeIf { it.isNotEmpty() }
                         ?: state.disks,
+                    // Une version ne change pas d'une minute a l'autre : garder
+                    // la derniere connue evite que la carte clignote.
+                    systemUpdate = (systemUpdate.await() as? ApiResult.Ok)?.value
+                        ?: state.systemUpdate,
                     rates = ratesBetween(state.usage, fresh),
                     usage = fresh,
                     // Une extinction programmee absente n'est pas une erreur :
