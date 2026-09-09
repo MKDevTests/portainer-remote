@@ -85,6 +85,14 @@ class HostRepository(private val store: HostStore) {
         return id
     }
 
+    /**
+     * Le mot de passe deja scelle, pour tester une adresse modifiee.
+     *
+     * Il ne sort d'ici que vers la fonction de test : changer une adresse ne
+     * doit pas obliger a ressaisir un mot de passe qui n'a pas change.
+     */
+    suspend fun storedPassword(hostId: String): String? = store.passwordOf(hostId)
+
     suspend fun forget(hostId: String) {
         store.forget(hostId)
         invalidate(hostId)

@@ -19,6 +19,12 @@ enum class HostKind(
      * laisser un bouton qui echouera.
      */
     val canApps: Boolean = false,
+    /**
+     * Lire la liste n'est pas la piloter. DSM rend ses conteneurs mais ses
+     * methodes d'ecriture n'ont pas ete sondees : la liste s'affiche, sans les
+     * boutons qui echoueraient.
+     */
+    val canSeeApps: Boolean = canApps,
     val canPower: Boolean = false,
     val canWriteSchedule: Boolean = false,
     val hasJournal: Boolean = false,
@@ -39,6 +45,7 @@ enum class HostKind(
     SYNOLOGY(
         label = "Synology DSM",
         supported = true,
+        canSeeApps = true,
         hasJournal = true,
     ),
 
@@ -98,6 +105,15 @@ data class HostApp(
      * c'est lui qui sait, et la valeur peut differer d'un systeme a l'autre.
      */
     val appType: String = "",
+    /**
+     * Ce que l'hote dit de son etat, dans ses mots.
+     *
+     * DSM ecrit « Up 6 days (healthy) » ou « Exited (137) 19 months ago » : une
+     * phrase deja composee, qui en dit plus que « en marche ». On la rend telle
+     * quelle plutot que de la reconstruire - la reconstruire, c'est inventer
+     * une duree que l'hote a deja calculee.
+     */
+    val detail: String = "",
 )
 
 /**

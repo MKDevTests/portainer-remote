@@ -101,11 +101,11 @@ class SynologyClient(
 
     private suspend fun catalogue(): Map<String, ApiEntry>? {
         catalogue?.let { return it }
-        val response = runCatching {
+        val response = fetch {
             http.get(
                 "$root/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=all",
             )
-        }.getOrNull() ?: return null
+        } ?: return null
         if (!response.status.isSuccess()) return null
 
         val body = parse(response.bodyAsText()) ?: return null
@@ -148,6 +148,9 @@ class SynologyClient(
     @Volatile
     private var otpPending: Boolean = false
 
+    /** Le motif du dernier echec reseau, s'il y en a eu un depuis un succes. */
+    private var lastFailure: String? = null
+
     override fun deviceToken(): String? = freshDeviceId
 
     override suspend fun signIn(otp: String?): ApiResult<SignIn> = attempt {
@@ -186,7 +189,7 @@ class SynologyClient(
             sid?.let { return@withLock SignIn.OK }
 
             val api = catalogue()?.get("SYNO.API.Auth") ?: return@withLock SignIn.REFUSED
-            val response = runCatching {
+            val response = fetch {
                 http.submitForm(
                     url = "$root/webapi/${api.path}",
                     formParameters = Parameters.build {
@@ -208,7 +211,7 @@ class SynologyClient(
                         }
                     },
                 )
-            }.getOrNull() ?: return@withLock SignIn.REFUSED
+            } ?: return@withLock SignIn.REFUSED
 
             val body = parse(response.bodyAsText())
             val data = body?.get("data") as? JsonObject
@@ -281,7 +284,7 @@ class SynologyClient(
                 append("&_sid=").append(token.encodeURLParameter())
             }
 
-            val response = runCatching { http.get(url) }.getOrNull() ?: return null
+            val response = fetch { http.get(url) } ?: return null
             val body = parse(response.bodyAsText())
             if (body?.succeeded() == true) return body
 
@@ -580,17 +583,47 @@ class SynologyClient(
         else -> LogLevel.INFO
     }
 
-    // ------------------------------------------------------- pas encore fait
-
     /**
      * La liste des conteneurs geres par DSM.
      *
-     * Mesuree, et refusee : SYNO.Docker.Container/list rend l'erreur 114,
-     * « parametres manquants », sans dire lesquels. Tant que ce n'est pas
-     * mesure, cette question reste sans reponse plutot que d'envoyer une
-     * requete au hasard - et Portainer, lui, sait deja lister ces conteneurs.
+     * Cette route rendait l'erreur 114, « parametres manquants », sans dire
+     * lesquels. La mesure a tranche : « limit » et « offset » suffisent, et
+     * sans eux DSM refuse. Ni « type », ni « additional », contrairement a ce
+     * que fait l'interface de Container Manager.
+     *
+     * Deux pieges dans la reponse, qui n'en est pas moins reguliere :
+     *
+     *   - elle ne porte pas de champ « success » a l'endroit habituel, mais
+     *     une charge sous « data » ;
+     *   - elle melange les conventions de DSM et celles de Docker : « status »
+     *     en minuscules a cote d'un objet « State » capitalise. Ce sont deux
+     *     champs differents, pas une variante d'ecriture.
+     *
+     * On lit « status », que DSM normalise en « running » / « stopped », et on
+     * garde « up_status » tel quel : c'est la phrase que DSM affiche lui-meme,
+     * duree et sante comprises.
      */
-    override suspend fun apps(): ApiResult<List<HostApp>> = ApiResult.Unsupported
+    override suspend fun apps(): ApiResult<List<HostApp>> = attempt {
+        val data = call("SYNO.Docker.Container", "list", "limit=-1&offset=0")?.data()
+            ?: return@attempt refused()
+
+        val apps = (data["containers"] as? JsonArray).orEmpty()
+            .filterIsInstance<JsonObject>()
+            .mapNotNull { container ->
+                val name = container.string("name")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                HostApp(
+                    id = container.string("id")?.takeIf { it.isNotBlank() } ?: name,
+                    name = name,
+                    running = container.string("status").equals("running", ignoreCase = true),
+                    detail = container.string("up_status").orEmpty(),
+                )
+            }
+            .sortedBy { it.name.lowercase() }
+
+        ApiResult.Ok(apps)
+    }
+
+    // ------------------------------------------------------- pas encore fait
 
     /** Cette version ne fait que lire. */
     override suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int> =
@@ -623,18 +656,50 @@ class SynologyClient(
     /**
      * Ce qu'on repond quand une lecture n'a pas abouti.
      *
-     * « Non gere » et « il manque un code » se ressemblent a l'ecran - rien ne
-     * s'affiche - mais l'un se corrige en attendant une prochaine version et
-     * l'autre en saisissant six chiffres.
+     * Trois causes, qui se ressemblent a l'ecran - rien ne s'affiche - et qui
+     * ne se corrigent pas du tout de la meme facon : attendre une prochaine
+     * version, saisir six chiffres, ou rallumer le reseau.
+     *
+     * La troisieme manquait. Un NAS injoignable s'affichait comme « non gere »,
+     * c'est-a-dire comme un defaut definitif de l'application - constate sur un
+     * NAS que la tablette ne pouvait pas joindre : elle n'a rien dit du tout.
      */
-    private fun <T> refused(): ApiResult<T> =
-        if (otpPending) ApiResult.HttpError(403) else ApiResult.Unsupported
+    private fun <T> refused(): ApiResult<T> = when {
+        otpPending -> ApiResult.HttpError(403)
+        lastFailure != null -> ApiResult.NetworkError(lastFailure ?: "Serveur injoignable")
+        else -> ApiResult.Unsupported
+    }
+
+    /**
+     * Un appel reseau dont l'echec est retenu, au lieu d'etre efface.
+     *
+     * Le motif exact - hote inconnu, delai depasse, connexion refusee - est ce
+     * qui distingue « ce NAS ne sait pas faire » de « ce NAS n'est pas la ».
+     */
+    private suspend fun fetch(block: suspend () -> HttpResponse): HttpResponse? = try {
+        block().also { lastFailure = null }
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (error: Throwable) {
+        lastFailure = error.message ?: error::class.simpleName ?: "Serveur injoignable"
+        null
+    }
 
     private fun parse(raw: String): JsonObject? =
         runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()
 
-    private fun JsonObject.succeeded(): Boolean =
-        (this["success"] as? JsonPrimitive)?.booleanOrNull == true
+    /**
+     * DSM ne met pas toujours son drapeau « success ».
+     *
+     * La route des conteneurs, mesuree, rend une charge sous « data » sans
+     * annoncer sa reussite ailleurs. S'en tenir au drapeau ferait jeter une
+     * reponse valide. Un refus, lui, porte toujours « error » : c'est ce
+     * qu'on regarde quand le drapeau manque.
+     */
+    private fun JsonObject.succeeded(): Boolean {
+        (this["success"] as? JsonPrimitive)?.booleanOrNull?.let { return it }
+        return this["error"] == null && this["data"] != null
+    }
 
     private fun JsonObject.data(): JsonObject? = this["data"] as? JsonObject
 

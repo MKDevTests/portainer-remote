@@ -38,6 +38,14 @@ data class HostUi(
     val testing: Boolean = false,
     /** Vrai quand on saisit un nouveau NAS, meme s'il en existe deja. */
     val adding: Boolean = false,
+    /**
+     * L'identifiant du NAS en cours de modification, vide si on en ajoute un.
+     *
+     * C'est lui qui fait la difference entre creer et modifier : enregistrer
+     * sous le meme identifiant conserve le mot de passe scelle, le jeton
+     * d'appareil et le Portainer associe.
+     */
+    val editingId: String = "",
     val apps: List<HostApp> = emptyList(),
     /** Identifiants des applications pour lesquelles l'hote annonce une mise a jour. */
     val upgradable: Set<String> = emptySet(),
@@ -70,6 +78,9 @@ data class HostUi(
     val setup: Boolean get() = adding || selected == null
 
     val portainerApp: HostApp? get() = apps.firstOrNull { selected?.isPortainerApp(it.id) == true }
+
+    /** Le NAS que la carte de saisie doit pre-remplir, s'il y en a un. */
+    val edited: Host? get() = hosts.firstOrNull { it.id == editingId }
 }
 
 /**
@@ -140,9 +151,14 @@ class HostViewModel(
         viewModelScope.launch { refresh() }
     }
 
-    fun startAdding() = _ui.update { it.copy(adding = true, message = null) }
+    fun startAdding() =
+        _ui.update { it.copy(adding = true, editingId = "", otpNeeded = false, message = null) }
 
-    fun cancelAdding() = _ui.update { it.copy(adding = false) }
+    fun startEditing() = _ui.update {
+        it.copy(adding = true, editingId = it.selectedId, otpNeeded = false, message = null)
+    }
+
+    fun cancelAdding() = _ui.update { it.copy(adding = false, editingId = "") }
 
     /**
      * Les trois lectures partent ensemble : elles sont independantes, et les
@@ -212,18 +228,29 @@ class HostViewModel(
     ) {
         viewModelScope.launch {
             _ui.update { it.copy(testing = true, message = null) }
+            val edited = _ui.value.edited
             val candidate = Host(
+                // Modifier, c'est reecrire la meme entree : un identifiant neuf
+                // en creerait une seconde et laisserait l'ancienne derriere.
+                id = edited?.id.orEmpty(),
                 kind = kind,
                 label = label.trim(),
                 baseUrl = baseUrl.trim(),
                 username = username.trim(),
                 serverId = serverId,
+                portainerAppId = edited?.portainerAppId.orEmpty(),
             )
-            val result = hosts.test(candidate, password, otp.trim().ifBlank { null })
+            // Un champ laisse vide sur une modification veut dire « garde le
+            // mot de passe actuel ». Il faut quand meme un mot de passe pour
+            // tester l'adresse : on reprend celui qui est deja scelle.
+            val secret = password.ifEmpty {
+                edited?.let { hosts.storedPassword(it.id) }.orEmpty()
+            }
+            val result = hosts.test(candidate, secret, otp.trim().ifBlank { null })
             when (val outcome = result.outcome) {
                 is ApiResult.Ok -> when (outcome.value) {
                     SignIn.OK -> {
-                        val id = hosts.save(candidate, password)
+                        val id = hosts.save(candidate, password.ifEmpty { null })
                         // Le jeton d'appareil se range apres l'enregistrement :
                         // avant, l'hote n'a pas encore d'identifiant sous
                         // lequel le ranger.
@@ -232,6 +259,7 @@ class HostViewModel(
                             it.copy(
                                 testing = false,
                                 adding = false,
+                                editingId = "",
                                 otpNeeded = false,
                                 selectedId = id,
                             )
@@ -239,11 +267,13 @@ class HostViewModel(
                         reload()
                         _ui.update {
                             it.copy(
-                                message = if (result.deviceId != null) {
-                                    "NAS connecté. Cet appareil est reconnu : " +
-                                        "plus de code à saisir."
-                                } else {
-                                    "NAS connecté."
+                                message = when {
+                                    edited != null -> "NAS mis à jour."
+                                    result.deviceId != null ->
+                                        "NAS connecté. Cet appareil est reconnu : " +
+                                            "plus de code à saisir."
+
+                                    else -> "NAS connecté."
                                 },
                             )
                         }

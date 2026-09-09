@@ -149,6 +149,17 @@ fun HostScreen(
                                 },
                             )
                             if (ui.selected != null) {
+                                // Une adresse change - un bail DHCP, une IP
+                                // Tailscale. La modifier ne doit pas couter la
+                                // machine : oublier puis re-ajouter perdrait le
+                                // jeton d'appareil, donc un code a ressaisir.
+                                DropdownMenuItem(
+                                    text = { Text("Modifier ce NAS") },
+                                    onClick = {
+                                        menuOpen = false
+                                        viewModel.startEditing()
+                                    },
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Oublier ce NAS et son mot de passe") },
                                     onClick = {
@@ -201,6 +212,7 @@ fun HostScreen(
                                 testing = ui.testing,
                                 canCancel = ui.hosts.isNotEmpty(),
                                 otpNeeded = ui.otpNeeded,
+                                existing = ui.edited,
                                 suggestUrl = viewModel::suggestedUrl,
                                 onCancel = viewModel::cancelAdding,
                                 onConnect = viewModel::connect,
@@ -262,17 +274,27 @@ fun HostScreen(
                         }
                     }
 
-                    if (host.kind.canApps) {
+                    if (host.kind.canSeeApps) {
                         item {
-                            SectionTitle(
-                                "Applications de l'hôte",
-                                "Celles que le NAS gère lui-même. Coche celle qui héberge Portainer.",
-                            )
+                            if (host.kind.canApps) {
+                                SectionTitle(
+                                    "Applications de l'hôte",
+                                    "Celles que le NAS gère lui-même. " +
+                                        "Coche celle qui héberge Portainer.",
+                                )
+                            } else {
+                                SectionTitle(
+                                    "Conteneurs de l'hôte",
+                                    "Ce que le NAS déclare. Lecture seule : " +
+                                        "ses commandes n'ont pas été mesurées.",
+                                )
+                            }
                         }
 
                         items(ui.apps, key = { it.id }) { app ->
                             AppRow(
                                 app = app,
+                                manageable = host.kind.canApps,
                                 isPortainer = host.isPortainerApp(app.id),
                                 busy = ui.busyApp == app.id,
                                 upgradable = app.id in ui.upgradable,
@@ -285,7 +307,11 @@ fun HostScreen(
                         if (ui.apps.isEmpty() && !ui.loading) {
                             item {
                                 Text(
-                                    "Aucune application déclarée à l'hôte.",
+                                    if (host.kind.canApps) {
+                                        "Aucune application déclarée à l'hôte."
+                                    } else {
+                                        "Aucun conteneur déclaré à l'hôte."
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -350,18 +376,28 @@ private fun SetupCard(
     testing: Boolean,
     canCancel: Boolean,
     otpNeeded: Boolean,
+    /**
+     * Le NAS qu'on modifie, ou null pour en connecter un nouveau.
+     *
+     * Changer une adresse ne devrait pas obliger a oublier la machine : on y
+     * perdrait le jeton d'appareil, donc un code de verification a ressaisir,
+     * et le Portainer associe.
+     */
+    existing: Host?,
     suggestUrl: (String) -> String,
     onCancel: () -> Unit,
     onConnect: (HostKind, String, String, String, String, String, String) -> Unit,
 ) {
-    var kind by remember { mutableStateOf(HostKind.ZIMA) }
-    var serverId by remember { mutableStateOf(servers.firstOrNull()?.id.orEmpty()) }
-    var label by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf(suggestUrl(serverId)) }
-    var user by remember { mutableStateOf("") }
-    var otp by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var urlTouched by remember { mutableStateOf(false) }
+    var kind by remember(existing) { mutableStateOf(existing?.kind ?: HostKind.ZIMA) }
+    var serverId by remember(existing) {
+        mutableStateOf(existing?.serverId ?: servers.firstOrNull()?.id.orEmpty())
+    }
+    var label by remember(existing) { mutableStateOf(existing?.label.orEmpty()) }
+    var url by remember(existing) { mutableStateOf(existing?.baseUrl ?: suggestUrl(serverId)) }
+    var user by remember(existing) { mutableStateOf(existing?.username.orEmpty()) }
+    var otp by remember(existing) { mutableStateOf("") }
+    var password by remember(existing) { mutableStateOf("") }
+    var urlTouched by remember(existing) { mutableStateOf(existing != null) }
 
     // Le mot de passe d'un NAS vaut plus que le jeton d'un Portainer : il ouvre
     // la machine entiere. En http il part en clair dans le corps de la requete,
@@ -377,7 +413,10 @@ private fun SetupCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Connecter un NAS", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (existing != null) "Modifier ce NAS" else "Connecter un NAS",
+                style = MaterialTheme.typography.titleMedium,
+            )
             Text(
                 "Portainer ne peut pas se relancer lui-même : il tourne dans un conteneur. " +
                     "Si ton NAS tourne sous un système reconnu, l'application peut le relancer " +
@@ -499,10 +538,26 @@ private fun SetupCard(
             OutlinedTextField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Mot de passe") },
+                label = {
+                    Text(
+                        if (existing != null) {
+                            "Mot de passe (vide = inchangé)"
+                        } else {
+                            "Mot de passe"
+                        },
+                    )
+                },
                 singleLine = true,
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                supportingText = if (existing == null) null else {
+                    {
+                        Text(
+                            "Laisse ce champ vide pour changer seulement l'adresse : " +
+                                "le mot de passe scellé et le jeton d'appareil sont conservés.",
+                        )
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
 
@@ -534,7 +589,11 @@ private fun SetupCard(
                 Button(
                     onClick = { onConnect(kind, label, url, user, password, serverId, otp) },
                     enabled = !testing && kind.supported && url.isNotBlank() &&
-                        user.isNotBlank() && password.isNotEmpty() &&
+                        user.isNotBlank() &&
+                        // Sur une modification, un mot de passe vide veut dire
+                        // « garde celui que tu as » : l'exiger reviendrait a le
+                        // faire ressaisir pour changer une adresse.
+                        (password.isNotEmpty() || existing != null) &&
                         (!otpNeeded || otp.length >= 6),
                 ) {
                     Text(if (testing) "Connexion…" else "Tester et enregistrer")
@@ -985,6 +1044,7 @@ private fun PortainerCard(
 @Composable
 private fun AppRow(
     app: HostApp,
+    manageable: Boolean,
     isPortainer: Boolean,
     busy: Boolean,
     upgradable: Boolean,
@@ -995,10 +1055,19 @@ private fun AppRow(
     Card(Modifier.fillMaxWidth()) {
         Column {
             Row(
-                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                modifier = Modifier.padding(
+                    start = if (manageable) 4.dp else 16.dp,
+                    end = 4.dp,
+                    top = if (manageable) 4.dp else 10.dp,
+                    bottom = if (manageable) 4.dp else 10.dp,
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                RadioButton(selected = isPortainer, onClick = onChoose)
+                // Le bouton de choix designe l'application qui heberge
+                // Portainer : il ne veut rien dire la ou rien ne se pilote.
+                if (manageable) {
+                    RadioButton(selected = isPortainer, onClick = onChoose)
+                }
                 Column(Modifier.weight(1f)) {
                     Text(
                         app.name,
@@ -1007,32 +1076,45 @@ private fun AppRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        if (app.running) "en marche" else "arrêté",
+                        // La phrase de l'hote quand il en donne une : elle
+                        // porte la duree et la sante, que « en marche » perd.
+                        app.detail.ifBlank { if (app.running) "en marche" else "arrêté" },
                         style = MaterialTheme.typography.labelSmall,
                         color = if (app.running) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                // « Relancer » n'a de sens que sur une application en marche :
-                // sur une application arretee, c'est « Demarrer » qu'on veut.
-                if (app.running) {
-                    IconButton(onClick = { onAction(HostAppAction.RESTART) }, enabled = !busy) {
-                        Icon(Icons.Default.RestartAlt, contentDescription = "Relancer ${app.name}")
-                    }
-                    IconButton(onClick = { onAction(HostAppAction.STOP) }, enabled = !busy) {
-                        Icon(Icons.Default.Stop, contentDescription = "Arrêter ${app.name}")
-                    }
-                } else {
-                    IconButton(onClick = { onAction(HostAppAction.START) }, enabled = !busy) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Démarrer ${app.name}")
+                if (manageable) {
+                    // « Relancer » n'a de sens que sur une application en
+                    // marche : sur une application arretee, c'est « Demarrer »
+                    // qu'on veut.
+                    if (app.running) {
+                        IconButton(onClick = { onAction(HostAppAction.RESTART) }, enabled = !busy) {
+                            Icon(
+                                Icons.Default.RestartAlt,
+                                contentDescription = "Relancer ${app.name}",
+                            )
+                        }
+                        IconButton(onClick = { onAction(HostAppAction.STOP) }, enabled = !busy) {
+                            Icon(Icons.Default.Stop, contentDescription = "Arrêter ${app.name}")
+                        }
+                    } else {
+                        IconButton(onClick = { onAction(HostAppAction.START) }, enabled = !busy) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = "Démarrer ${app.name}",
+                            )
+                        }
                     }
                 }
             }
 
-            if (upgradable) {
+            if (manageable && upgradable) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
