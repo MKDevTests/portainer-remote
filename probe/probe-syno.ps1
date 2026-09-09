@@ -44,6 +44,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $BaseUrl = $BaseUrl.TrimEnd("/")
+if ($BaseUrl -notmatch '^https?://') { $BaseUrl = "http://$BaseUrl" }
+$enClair = $BaseUrl.StartsWith("http://")
 $out = Join-Path $PSScriptRoot $Tag
 if (-not (Test-Path $out)) { New-Item -ItemType Directory -Path $out | Out-Null }
 
@@ -170,6 +172,17 @@ if (-not $authApi) {
 Write-Host ""
 Write-Host "Phase 2 - sondage en lecture seule" -ForegroundColor Cyan
 Write-Host "  Utiliser de preference un compte dedie, sans droits d'administration." -ForegroundColor DarkGray
+if ($enClair) {
+  # Dit une fois, sans empecher : sur un reseau prive ou dans un tunnel
+  # chiffre, le port 5000 est un choix defendable. Sur un reseau partage, non.
+  Write-Host ""
+  Write-Host "  Attention : l'adresse est en http. Le mot de passe traversera le reseau" -ForegroundColor Yellow
+  Write-Host "  en clair, sauf si ce reseau est deja chiffre (Tailscale, VPN). DSM ecoute" -ForegroundColor Yellow
+  Write-Host "  aussi en TLS sur 5001 : .\probe-syno.ps1 -BaseUrl https://<hote>:5001 -SkipTls" -ForegroundColor Yellow
+  Write-Host ""
+  $suite = Read-Host "  Continuer quand meme ? (o/N)"
+  if ($suite -notmatch '^(o|O|y|Y)') { return }
+}
 $user = Read-Host "  Utilisateur DSM"
 $sec  = Read-Host "  Mot de passe" -AsSecureString
 
