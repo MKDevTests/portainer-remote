@@ -98,8 +98,30 @@ class HostViewModel(
         return server?.baseUrl?.let(hosts::guessBaseUrl).orEmpty()
     }
 
+    /**
+     * Change de NAS, et oublie tout ce qui appartenait au precedent.
+     *
+     * Garder la derniere valeur connue a du sens pendant un rafraichissement du
+     * meme hote : ca evite de faire clignoter l'ecran. Ca n'en a aucun en
+     * changeant de machine - on afficherait les disques de l'une sous le nom de
+     * l'autre, le temps que les lectures reviennent.
+     */
     fun select(hostId: String) {
-        _ui.update { it.copy(selectedId = hostId, adding = false, apps = emptyList()) }
+        _ui.update {
+            it.copy(
+                selectedId = hostId,
+                adding = false,
+                apps = emptyList(),
+                upgradable = emptySet(),
+                usage = HostUsage(),
+                machine = HostMachine(),
+                disks = emptyList(),
+                diskSleep = null,
+                rates = emptyList(),
+                scheduledOff = null,
+                busyApp = null,
+            )
+        }
         viewModelScope.launch { refresh() }
     }
 
@@ -337,6 +359,11 @@ class HostViewModel(
      * en negatif.
      */
     private fun ratesBetween(before: HostUsage, after: HostUsage): List<NetRate> {
+        // Certains hotes publient deja des debits : les differencier les
+        // ramenerait a zero. On les prend tels quels.
+        if (after.networkIsRate) {
+            return after.network.map { NetRate(it.name, it.sentBytes, it.receivedBytes) }
+        }
         val elapsed = after.takenAt - before.takenAt
         if (before.takenAt <= 0L || elapsed < 1_000L) return emptyList()
         val seconds = elapsed / 1000.0

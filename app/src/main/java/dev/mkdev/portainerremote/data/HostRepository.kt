@@ -8,9 +8,11 @@ import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostDisk
+import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
@@ -148,6 +150,14 @@ class HostRepository(private val store: HostStore) {
 
     suspend fun disks(hostId: String): ApiResult<List<HostDisk>> =
         withClient(hostId) { it.disks() }
+
+    /**
+     * Le journal de l'hote. Le filtre part vers la machine plutot que d'etre
+     * applique ici : filtrer apres coup ne montrerait que les erreurs des
+     * dernieres lignes lues, pas les dernieres erreurs.
+     */
+    suspend fun journal(hostId: String, level: LogLevel?, limit: Int): ApiResult<HostJournal> =
+        withClient(hostId) { it.journal(level, limit) }
 
     suspend fun diskSleep(hostId: String): ApiResult<DiskSleep> =
         withClient(hostId) { it.diskSleep() }

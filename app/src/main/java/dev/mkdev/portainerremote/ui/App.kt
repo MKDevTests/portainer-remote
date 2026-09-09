@@ -15,6 +15,8 @@ import dev.mkdev.portainerremote.rememberAppContainer
 import dev.mkdev.portainerremote.ui.backup.BackupScreen
 import dev.mkdev.portainerremote.ui.backup.BackupViewModel
 import dev.mkdev.portainerremote.ui.host.HostScreen
+import dev.mkdev.portainerremote.ui.journal.JournalScreen
+import dev.mkdev.portainerremote.ui.journal.JournalViewModel
 import dev.mkdev.portainerremote.ui.host.HostViewModel
 import dev.mkdev.portainerremote.ui.images.ImagesScreen
 import dev.mkdev.portainerremote.ui.images.ImagesViewModel
@@ -36,6 +38,7 @@ private const val ROUTE_IMAGES = "images/{serverId}"
 private const val ROUTE_UPDATES = "updates"
 private const val ROUTE_BACKUP = "backup"
 private const val ROUTE_HOST = "host"
+private const val ROUTE_JOURNAL = "journal/{hostId}/{title}"
 private const val ROUTE_LOGS = "logs/{serverId}/{envId}/{containerId}/{name}"
 
 @Composable
@@ -170,6 +173,30 @@ fun App(openUpdatesAtStart: Boolean = false) {
                         initializer {
                             HostViewModel(container.hostRepository, container.serverStore)
                         }
+                    },
+                ),
+                onBack = { navController.popBackStack() },
+                onOpenJournal = { hostId, title ->
+                    navController.navigate("journal/$hostId/${Uri.encode(title)}")
+                },
+            )
+        }
+
+        composable(
+            route = ROUTE_JOURNAL,
+            arguments = listOf(
+                navArgument("hostId") { type = NavType.StringType },
+                navArgument("title") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val hostId = entry.arguments?.getString("hostId").orEmpty()
+            val title = entry.arguments?.getString("title").orEmpty()
+
+            JournalScreen(
+                viewModel = viewModel(
+                    key = "journal-$hostId",
+                    factory = viewModelFactory {
+                        initializer { JournalViewModel(hostId, title, container.hostRepository) }
                     },
                 ),
                 onBack = { navController.popBackStack() },

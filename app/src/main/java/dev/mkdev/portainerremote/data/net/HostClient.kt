@@ -6,10 +6,12 @@ import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostDisk
+import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
 
 /**
@@ -54,6 +56,17 @@ interface HostClient {
 
     suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int>
 
+    /**
+     * Le journal de l'hote : connexions, utilisateurs, acces.
+     *
+     * Aucune autre source ne repond a cette question. Docker ne garde que ses
+     * 256 derniers evenements en memoire, ZimaOS n'expose aucune route de
+     * journal, et l'historique d'authentification de Portainer est reserve a
+     * son edition payante. Un hote qui ne sait pas repond Unsupported, et
+     * l'ecran disparait plutot que de montrer une page vide.
+     */
+    suspend fun journal(level: LogLevel?, limit: Int): ApiResult<HostJournal>
+
     suspend fun power(action: HostPower): ApiResult<Int>
 
     fun close()
@@ -66,7 +79,8 @@ interface HostClient {
          */
         fun of(host: Host, password: String): HostClient = when (host.kind) {
             HostKind.ZIMA -> ZimaClient(host.baseUrl, host.username, password)
-            HostKind.SYNOLOGY, HostKind.QNAP -> UnsupportedHostClient
+            HostKind.SYNOLOGY -> SynologyClient(host.baseUrl, host.username, password)
+            HostKind.QNAP -> UnsupportedHostClient
         }
     }
 }
@@ -92,6 +106,8 @@ object UnsupportedHostClient : HostClient {
     override suspend fun usage(): ApiResult<HostUsage> = ApiResult.Unsupported
     override suspend fun machine(): ApiResult<HostMachine> = ApiResult.Unsupported
     override suspend fun disks(): ApiResult<List<HostDisk>> = ApiResult.Unsupported
+    override suspend fun journal(level: LogLevel?, limit: Int): ApiResult<HostJournal> =
+        ApiResult.Unsupported
     override suspend fun diskSleep(): ApiResult<DiskSleep> = ApiResult.Unsupported
     override suspend fun scheduledOff(): ApiResult<ScheduledOff> = ApiResult.Unsupported
     override suspend fun setScheduledOff(schedule: ScheduledOff): ApiResult<Int> =

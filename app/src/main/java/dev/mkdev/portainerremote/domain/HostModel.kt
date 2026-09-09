@@ -10,10 +10,39 @@ package dev.mkdev.portainerremote.domain
  * Les entrees non gerees existent quand meme : une absence annoncee se lit,
  * une absence silencieuse laisse chercher.
  */
-enum class HostKind(val label: String, val supported: Boolean) {
-    ZIMA("ZimaOS · CasaOS", true),
-    SYNOLOGY("Synology DSM", false),
-    QNAP("QNAP QTS", false),
+enum class HostKind(
+    val label: String,
+    val supported: Boolean,
+    /**
+     * Ce que ce systeme sait faire, tel qu'il a ete mesure - pas tel qu'on
+     * l'espere. Une capacite absente fait disparaitre sa carte, plutot que de
+     * laisser un bouton qui echouera.
+     */
+    val canApps: Boolean = false,
+    val canPower: Boolean = false,
+    val canWriteSchedule: Boolean = false,
+    val hasJournal: Boolean = false,
+) {
+    ZIMA(
+        label = "ZimaOS · CasaOS",
+        supported = true,
+        canApps = true,
+        canPower = true,
+        canWriteSchedule = true,
+    ),
+
+    /**
+     * DSM 7. Lecture seule pour l'instant : ses methodes d'ecriture n'ont pas
+     * ete sondees, et les essayer reviendrait a eteindre un NAS pour verifier
+     * qu'on sait l'eteindre. En echange, il est le seul a publier un journal.
+     */
+    SYNOLOGY(
+        label = "Synology DSM",
+        supported = true,
+        hasJournal = true,
+    ),
+
+    QNAP(label = "QNAP QTS", supported = false),
 }
 
 /**
@@ -90,6 +119,13 @@ data class HostUsage(
     val diskUsedBytes: Long = -1,
     val diskTotalBytes: Long = -1,
     val network: List<NetCounters> = emptyList(),
+    /**
+     * Vrai quand l'hote publie deja des debits plutot que des compteurs.
+     *
+     * DSM le fait, ZimaOS non. Soustraire deux debits donnerait zero, et
+     * l'ecran annoncerait un reseau au repos sur une machine qui transfere.
+     */
+    val networkIsRate: Boolean = false,
     /** Horodatage local de la mesure, pour calculer un debit entre deux lectures. */
     val takenAt: Long = 0,
 ) {
@@ -113,9 +149,19 @@ data class HostUsage(
  * remplissage. Additionner ce que les systemes de fichiers declarent est la
  * seule mesure qui corresponde a ce qu'on voit.
  */
+/** Ce qu'une ligne de la carte decrit vraiment. */
+enum class DiskRole { VOLUME, DRIVE }
+
 data class HostDisk(
     val name: String,
     val model: String,
+    /**
+     * Un volume porte l'espace occupe, un disque porte la temperature et la
+     * sante. Sur ZimaOS les deux se confondent - un disque, une partition -
+     * mais un Synology en RAID publie trois disques sous un seul volume :
+     * les melanger afficherait des chiffres qui ne s'additionnent pas.
+     */
+    val role: DiskRole = DiskRole.DRIVE,
     /** HDD, SSD, MMC... tel quel : l'hote le donne deja en toutes lettres. */
     val kind: String = "",
     val sizeBytes: Long = -1,
@@ -138,6 +184,52 @@ data class HostDisk(
             -1
         }
 }
+
+/** La nature d'une entree de journal, telle que l'hote la classe. */
+enum class LogLevel(val label: String) {
+    INFO("Information"),
+    WARNING("Avertissement"),
+    ERROR("Erreur"),
+}
+
+/**
+ * Une entree du journal systeme de l'hote.
+ *
+ * Elle vient de la machine, pas de l'application : c'est elle qui sait qui
+ * s'est connecte et quand. L'entree est donc rendue telle qu'elle est publiee -
+ * on ne traduit pas son texte, on ne devine pas ce qu'il veut dire.
+ */
+data class LogEntry(
+    val time: String,
+    val level: LogLevel = LogLevel.INFO,
+    /** La categorie de l'hote : « System », « Connexion »... Vide si absente. */
+    val category: String = "",
+    val message: String,
+    /** L'utilisateur concerne, quand l'hote le nomme. */
+    val who: String = "",
+)
+
+/**
+ * Une session ouverte en ce moment sur l'hote.
+ *
+ * C'est la reponse a « qui est connecte la, maintenant » - une question qu'un
+ * journal, qui regarde le passe, ne repond pas.
+ */
+data class LogSession(
+    val who: String,
+    val from: String,
+    val protocol: String = "",
+    val since: String = "",
+    val current: Boolean = false,
+)
+
+/** Ce qu'un hote sait raconter de lui-meme. Vide quand il ne raconte rien. */
+data class HostJournal(
+    val entries: List<LogEntry> = emptyList(),
+    val sessions: List<LogSession> = emptyList(),
+    /** Total annonce par l'hote, qui depasse souvent ce qui a ete lu. */
+    val total: Int = 0,
+)
 
 data class NetCounters(
     val name: String,
@@ -169,30 +261,41 @@ data class HostMachine(
 /**
  * Le delai avant mise en veille des disques.
  *
- * L'hote le publie sous forme d'un niveau ATA, la meme echelle que hdparm : de
- * 1 a 240, des pas de cinq secondes ; de 241 a 251, des pas de trente minutes.
- * L'interpretation est donnee comme telle - c'est une lecture du standard, pas
- * une mesure faite sur la machine.
+ * Les deux systemes ne comptent pas pareil : ZimaOS publie un niveau ATA, la
+ * meme echelle que hdparm, tandis que DSM publie des minutes. La classe garde
+ * donc des minutes et laisse chaque client dire d'ou elles viennent.
  */
-@JvmInline
-value class DiskSleep(val level: Int) {
-
-    val minutes: Int?
-        get() = when (level) {
-            in 1..240 -> (level * 5) / 60
-            in 241..251 -> (level - 240) * 30
-            else -> null
-        }
+class DiskSleep private constructor(val minutes: Int?, private val raw: String) {
 
     val label: String
         get() = when {
-            level <= 0 -> "jamais"
-            minutes == null -> "niveau $level"
-            minutes == 0 -> "moins d'une minute"
-            minutes!! < 60 -> "${minutes} min"
-            minutes!! % 60 == 0 -> "${minutes!! / 60} h"
-            else -> "${minutes!! / 60} h ${minutes!! % 60} min"
+            minutes == null -> raw
+            minutes <= 0 -> "jamais"
+            minutes < 60 -> "$minutes min"
+            minutes % 60 == 0 -> "${minutes / 60} h"
+            else -> "${minutes / 60} h ${minutes % 60} min"
         }
+
+    companion object {
+        /**
+         * L'echelle ATA, celle que ZimaOS publie telle quelle.
+         *
+         * Le standard la definit en deux tranches : de 1 a 240, chaque cran
+         * vaut cinq secondes ; de 241 a 251, chaque cran vaut trente minutes.
+         * Cette lecture vient de la norme, pas d'une mesure sur la machine :
+         * un niveau hors de ces tranches est donc affiche tel quel plutot
+         * qu'interprete de travers.
+         */
+        fun fromAtaLevel(level: Int): DiskSleep = when (level) {
+            0 -> DiskSleep(0, "jamais")
+            in 1..240 -> DiskSleep((level * 5) / 60, "")
+            in 241..251 -> DiskSleep((level - 240) * 30, "")
+            else -> DiskSleep(null, "niveau $level")
+        }
+
+        /** DSM compte directement en minutes : rien a interpreter. */
+        fun fromMinutes(minutes: Int): DiskSleep = DiskSleep(minutes, "")
+    }
 }
 
 /**

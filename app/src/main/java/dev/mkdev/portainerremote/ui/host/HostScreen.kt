@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.mkdev.portainerremote.domain.DiskRole
 import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
@@ -78,7 +80,11 @@ import dev.mkdev.portainerremote.domain.Server
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
+fun HostScreen(
+    viewModel: HostViewModel,
+    onBack: () -> Unit,
+    onOpenJournal: (hostId: String, title: String) -> Unit,
+) {
     val ui by viewModel.ui.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     var menuOpen by remember { mutableStateOf(false) }
@@ -113,6 +119,17 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    // Le journal n'existe que la ou l'hote en publie un : chez
+                    // Synology oui, chez ZimaOS non. Une icone qui ouvrirait un
+                    // ecran vide serait une promesse non tenue.
+                    ui.selected?.takeIf { !ui.setup && it.kind.hasJournal }?.let { host ->
+                        IconButton(onClick = { onOpenJournal(host.id, host.title) }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ListAlt,
+                                contentDescription = "Journal de l'hôte",
+                            )
+                        }
+                    }
                     if (!ui.setup) {
                         IconButton(onClick = { viewModel.refresh() }) {
                             Icon(Icons.Default.Refresh, contentDescription = "Rafraîchir")
@@ -207,13 +224,15 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                         )
                     }
 
-                    item {
-                        PortainerCard(
-                            app = ui.portainerApp,
-                            chosen = host.portainerAppId.isNotBlank(),
-                            busy = ui.busyApp,
-                            onAction = viewModel::appAction,
-                        )
+                    if (host.kind.canApps) {
+                        item {
+                            PortainerCard(
+                                app = ui.portainerApp,
+                                chosen = host.portainerAppId.isNotBlank(),
+                                busy = ui.busyApp,
+                                onAction = viewModel::appAction,
+                            )
+                        }
                     }
 
                     ui.scheduledOff?.let { schedule ->
@@ -221,41 +240,46 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                             ScheduleCard(
                                 schedule = schedule,
                                 saving = ui.savingSchedule,
+                                editable = host.kind.canWriteSchedule,
                                 onSave = viewModel::saveSchedule,
                             )
                         }
                     }
 
-                    item {
-                        SectionTitle(
-                            "Applications de l'hôte",
-                            "Celles que le NAS gère lui-même. Coche celle qui héberge Portainer.",
-                        )
-                    }
-
-                    items(ui.apps, key = { it.id }) { app ->
-                        AppRow(
-                            app = app,
-                            isPortainer = host.isPortainerApp(app.id),
-                            busy = ui.busyApp == app.id,
-                            upgradable = app.id in ui.upgradable,
-                            onChoose = { viewModel.choosePortainerApp(app.id) },
-                            onAction = { action -> viewModel.appAction(app, action) },
-                            onUpgrade = { viewModel.upgrade(app) },
-                        )
-                    }
-
-                    if (ui.apps.isEmpty() && !ui.loading) {
+                    if (host.kind.canApps) {
                         item {
-                            Text(
-                                "Aucune application déclarée à l'hôte.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            SectionTitle(
+                                "Applications de l'hôte",
+                                "Celles que le NAS gère lui-même. Coche celle qui héberge Portainer.",
                             )
+                        }
+
+                        items(ui.apps, key = { it.id }) { app ->
+                            AppRow(
+                                app = app,
+                                isPortainer = host.isPortainerApp(app.id),
+                                busy = ui.busyApp == app.id,
+                                upgradable = app.id in ui.upgradable,
+                                onChoose = { viewModel.choosePortainerApp(app.id) },
+                                onAction = { action -> viewModel.appAction(app, action) },
+                                onUpgrade = { viewModel.upgrade(app) },
+                            )
+                        }
+
+                        if (ui.apps.isEmpty() && !ui.loading) {
+                            item {
+                                Text(
+                                    "Aucune application déclarée à l'hôte.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
 
-                    item { PowerCard(onAction = { confirm = it }) }
+                    if (host.kind.canPower) {
+                        item { PowerCard(onAction = { confirm = it }) }
+                    }
                 }
             }
         }
@@ -359,6 +383,27 @@ private fun SetupCard(
                     )
                 }
             }
+            // Ce que chaque systeme attend, dit avant la saisie : un port par
+            // defaut faux fait echouer une connexion qui aurait marche.
+            if (kind.supported) {
+                Text(
+                    when (kind) {
+                        HostKind.ZIMA ->
+                            "Adresse de l'interface ZimaOS, port 80 ou 85 selon l'installation."
+
+                        HostKind.SYNOLOGY ->
+                            "Adresse de DSM, port 5000 en clair ou 5001 en TLS. " +
+                                "Lecture seule pour l'instant : charge, disques, veille et " +
+                                "journal. Ni extinction ni redémarrage, leurs commandes " +
+                                "n'ont pas été mesurées."
+
+                        HostKind.QNAP -> ""
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             if (!kind.supported) {
                 // Refuser en silence laisse chercher l'erreur ailleurs : on dit
                 // ce qui manque, et on empeche la tentative plutot que de la
@@ -519,7 +564,21 @@ private fun DisksCard(disks: List<HostDisk>) {
         ) {
             Text("Disques", style = MaterialTheme.typography.titleMedium)
 
+            // Quand l'hote publie des volumes, ce sont eux qui portent la place
+            // occupee : les disques dessous n'en ont pas a eux seuls, et le
+            // signaler ligne par ligne ferait croire a une panne.
+            val volumes = disks.count { it.role == DiskRole.VOLUME }
+            var role: DiskRole? = null
+
             disks.forEach { disk ->
+                if (volumes > 0 && disk.role != role) {
+                    role = disk.role
+                    Text(
+                        if (disk.role == DiskRole.VOLUME) "Volumes" else "Disques physiques",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(Modifier.fillMaxWidth()) {
                         Text(
@@ -572,8 +631,9 @@ private fun DisksCard(disks: List<HostDisk>) {
                     }
 
                     // Une partition non montee ne se compte pas : le dire evite
-                    // de faire passer un disque plein pour un disque vide.
-                    if (disk.usedBytes < 0 && disk.sizeBytes > 0) {
+                    // de faire passer un disque plein pour un disque vide. Mais
+                    // la ou des volumes existent, la place est comptee ailleurs.
+                    if (disk.usedBytes < 0 && disk.sizeBytes > 0 && volumes == 0) {
                         Text(
                             "Aucune partition montée : l'occupation reste inconnue.",
                             style = MaterialTheme.typography.labelSmall,
@@ -851,6 +911,7 @@ private fun AppRow(
 private fun ScheduleCard(
     schedule: ScheduledOff,
     saving: Boolean,
+    editable: Boolean,
     onSave: (ScheduledOff) -> Unit,
 ) {
     var editing by remember { mutableStateOf(false) }
@@ -875,8 +936,10 @@ private fun ScheduleCard(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = { editing = !editing }) {
-                    Text(if (editing) "Fermer" else "Modifier")
+                if (editable) {
+                    TextButton(onClick = { editing = !editing }) {
+                        Text(if (editing) "Fermer" else "Modifier")
+                    }
                 }
             }
 
@@ -894,7 +957,7 @@ private fun ScheduleCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            if (!editing) return@Column
+            if (!editing || !editable) return@Column
 
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),

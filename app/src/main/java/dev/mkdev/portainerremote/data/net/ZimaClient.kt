@@ -5,9 +5,11 @@ import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostDisk
+import dev.mkdev.portainerremote.domain.HostJournal
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
+import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.NetCounters
 import dev.mkdev.portainerremote.domain.ScheduledOff
 import io.ktor.client.HttpClient
@@ -511,7 +513,7 @@ class ZimaClient(
             ?: return@attempt ApiResult.Unsupported
         val data = body["data"] as? JsonObject ?: body
         val level = data.long("level")?.toInt() ?: return@attempt ApiResult.Unsupported
-        ApiResult.Ok(DiskSleep(level))
+        ApiResult.Ok(DiskSleep.fromAtaLevel(level))
     }
 
     /**
@@ -581,6 +583,16 @@ class ZimaClient(
      * PUT /v1/sys/state/off. Rien ici ne confirme a la place de l'utilisateur -
      * la confirmation appartient a l'interface.
      */
+    /**
+     * ZimaOS n'expose aucun journal.
+     *
+     * Ce n'est pas une omission de ce client : les quelque trois cents routes
+     * extraites de son interface n'en contiennent aucune, hormis les logs d'un
+     * conteneur, que Portainer montre deja.
+     */
+    override suspend fun journal(level: LogLevel?, limit: Int): ApiResult<HostJournal> =
+        ApiResult.Unsupported
+
     override suspend fun power(action: HostPower): ApiResult<Int> = attempt {
         call(HttpMethod.Put, "/v1/sys/state/${action.state}").outcome()
     }
