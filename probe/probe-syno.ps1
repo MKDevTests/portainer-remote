@@ -23,6 +23,14 @@
     - aucun numero de serie, adresse MAC, adresse IP ou identifiant materiel
       dans les fichiers ecrits : ils sont remplaces avant enregistrement.
 
+  Le journal systeme fait partie des besoins. DSM en publie un - connexions,
+  utilisateurs, acces - mais sous un nom d'API qui change d'une version a
+  l'autre. Ce script ne devine pas ce nom : la phase 1 nomme simplement toutes
+  les API dont le nom evoque un journal, et le contenu ne sera lu qu'apres,
+  quand on saura laquelle repond. Un journal de connexions dit qui s'est
+  connecte et depuis ou : il ne sera jamais archive en clair sans decision
+  explicite.
+
   Usage :
     .\probe-syno.ps1 -BaseUrl https://192.168.1.40:5001 -SkipTls
     .\probe-syno.ps1 -BaseUrl https://192.168.1.40:5001 -SkipTls -Auth
@@ -123,6 +131,23 @@ foreach ($nom in $attendues) {
   } else {
     Write-Host ("  absent   {0}" -f $nom) -ForegroundColor DarkGray
   }
+}
+
+# Les API de journal, recensees sans etre appelees. C'est la reponse a « ou
+# sont les connexions et les acces » : elle se lit dans le catalogue, pas dans
+# une supposition sur le nom.
+$journaux = $apis | Where-Object { $_.api -match '(?i)log|syslog|event|security|connection' }
+Write-Host ""
+if ($journaux) {
+  Write-Host ("  {0} API de journal declarees :" -f @($journaux).Count) -ForegroundColor Cyan
+  foreach ($j in ($journaux | Sort-Object api)) {
+    Write-Host ("    {0,-45} {1} v{2}-{3}" -f $j.api, $j.path, $j.minVer, $j.maxVer)
+  }
+  $journaux | Sort-Object api | ForEach-Object {
+    "{0,-45} {1,-22} v{2}-{3}" -f $_.api, $_.path, $_.minVer, $_.maxVer
+  } | Out-File (Join-Path $out "api_journaux.txt") -Encoding utf8
+} else {
+  Write-Host "  Aucune API de journal declaree par ce DSM." -ForegroundColor DarkGray
 }
 
 if (-not $Auth) {

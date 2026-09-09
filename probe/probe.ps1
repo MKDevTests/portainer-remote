@@ -90,29 +90,58 @@ if ($eps) {
 # Les evenements Docker. Reponse en JSON par lignes, pas en tableau : elle est
 # donc lue en texte brut, et non par Invoke-RestMethod qui la refuserait.
 #
-# « until » est obligatoire : sans lui, Docker garde la connexion ouverte et
-# diffuse indefiniment. Avec lui, la fenetre est bornee et la requete se termine.
+# Deux precautions apprises a la dure :
+#
+#   1. L'horodatage vient de [DateTimeOffset]::UtcNow, pas de « Get-Date
+#      -UFormat %s » : sous PowerShell 5.1, ce dernier rend l'heure locale
+#      comme si elle etait UTC. Avec un fuseau a +2, « until » se retrouvait
+#      deux heures dans le futur, et Docker attendait sagement cette heure-la
+#      avant de fermer - le script semblait bloque alors qu'il obeissait.
+#
+#   2. La lecture est plafonnee. Une fenetre bornee devrait suffire, mais un
+#      plafond garantit qu'aucune erreur de date ne fera plus attendre.
 function ProbeEvents($id) {
-  $now   = [int][double]::Parse((Get-Date -UFormat %s))
+  $now   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
   $since = $now - 86400
-  $url   = "$BaseUrl/api/endpoints/$id/docker/events?since=$since&until=$now"
+  $until = $now - 1
+  $url   = "$BaseUrl/api/endpoints/$id/docker/events?since=$since&until=$until"
+
+  $resp = $null; $reader = $null
   try {
-    $raw = (Invoke-WebRequest -Uri $url -Headers $H -TimeoutSec 30 -UseBasicParsing).Content
+    $req = [System.Net.HttpWebRequest]::Create($url)
+    $req.Method           = "GET"
+    $req.Timeout          = 20000
+    $req.ReadWriteTimeout = 20000
+    $req.Headers.Add("X-API-Key", $token)
+
+    $resp   = $req.GetResponse()
+    $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+
+    $sb = New-Object System.Text.StringBuilder
+    $lignes = 0
+    while ($lignes -lt 2000 -and $sb.Length -lt 524288) {
+      $line = $reader.ReadLine()
+      if ($null -eq $line) { break }
+      if ($line.Trim()) { [void]$sb.AppendLine($line); $lignes++ }
+    }
+
     # Les evenements portent les etiquettes des conteneurs : rien n'y est
     # secret en principe, mais on retire quand meme ce qui en aurait l'air.
-    $raw = [regex]::Replace($raw, '("[^"]*(?i:password|passwd|token|secret|api_?key)[^"]*"\s*:\s*)"[^"]*"', '$1"<redige>"')
+    $raw = [regex]::Replace($sb.ToString(), '("[^"]*(?i:password|passwd|token|secret|api_?key)[^"]*"\s*:\s*)"[^"]*"', '$1"<redige>"')
     $raw | Out-File (Join-Path $out "events_env$id.ndjson") -Encoding utf8
-    $lignes = ($raw -split "`n" | Where-Object { $_.Trim() }).Count
     Write-Host ("  OK    events_env{0,-6} {1} evenements sur 24 h" -f $id, $lignes) -ForegroundColor Green
   } catch {
     $code = "?"
     if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-    Write-Host ("  HS {0,-4} events_env{1}" -f $code, $id) -ForegroundColor DarkYellow
+    Write-Host ("  HS {0,-4} events_env{1}  {2}" -f $code, $id, $_.Exception.Message) -ForegroundColor DarkYellow
+  } finally {
+    if ($reader) { $reader.Close() }
+    if ($resp)   { $resp.Close() }
   }
 }
 
 if ($eps) {
-  Write-Host "`n  Evenements Docker (fenetre de 24 h, bornee)"
+  Write-Host "`n  Evenements Docker (24 h, fenetre fermee dans le passe)"
   foreach ($e in @($eps)) { ProbeEvents $e.Id }
 }
 
