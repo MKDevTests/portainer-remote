@@ -232,7 +232,14 @@ try {
     '/v2/zimaos/device/info',
     '/v2/local_storage/disk/sleep',
     '/v1/sys/utilization',
-    '/v1/sys/hardware'
+    '/v1/sys/hardware',
+    # Les disques, un par un. La jauge actuelle ne connait que le disque
+    # systeme : ces quatre routes sont les seules candidates a une liste, et on
+    # ne saura laquelle repond qu'en demandant.
+    '/v2/local_storage/disk',
+    '/v2/local_storage/disk/info',
+    '/v2/local_storage/storage',
+    '/v2/local_storage/usage'
   )
 
   $targets = @($concrete) + @($questions) | Select-Object -Unique
@@ -242,7 +249,7 @@ try {
     try {
       $r = Invoke-RestMethod -Uri "$BaseUrl$path" -Headers $header -Method Get -TimeoutSec 10
       $json = $r | ConvertTo-Json -Depth 6
-      $json = [regex]::Replace($json, '("(?:access_token|refresh_token|token|password|secret)"\s*:\s*)"[^"]*"', '$1"<redige>"')
+      $json = [regex]::Replace($json, '("(?:access_token|refresh_token|token|password|secret|serial|serial_number|sn|mac|uuid|device_code|hash)"\s*:\s*)"[^"]*"', '$1"<redige>"')
       $name = ($path.Trim("/") -replace "[^A-Za-z0-9]", "_")
       $json | Out-File (Join-Path $out "$name.json") -Encoding utf8
       $report += "OK    $path"
