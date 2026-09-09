@@ -160,5 +160,59 @@ if ($eps) {
   }
 }
 
+# ------------------------------------------------------ journal des connexions
+#
+# La question posee : « qui s'est connecte, quand ». Deux candidats, aucun
+# mesure jusqu'ici.
+#
+#   1. /api/useractivity/authlogs. Portainer l'expose... en edition Business.
+#      Sur une CE, un 404 fermera la question definitivement.
+#   2. Le conteneur Portainer lui-meme. S'il ecrit ses authentifications sur sa
+#      sortie standard, l'ecran de logs existant les montre deja, et un journal
+#      dedie ne serait qu'une vue filtree de ce flux.
+
+Write-Host "`n  Journal des connexions"
+
+foreach ($p in @("/api/useractivity/authlogs?limit=20", "/api/useractivity/logs?limit=20")) {
+  try {
+    $r = Invoke-RestMethod -Uri "$BaseUrl$p" -Headers $H -TimeoutSec 15
+    $r | ConvertTo-Json -Depth 6 | Out-File (Join-Path $out "useractivity.json") -Encoding utf8
+    Write-Host ("  OK    {0}  -> REPOND, journal disponible" -f $p) -ForegroundColor Green
+  } catch {
+    $code = "?"
+    if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+    Write-Host ("  HS {0,-4} {1}" -f $code, $p) -ForegroundColor DarkYellow
+  }
+}
+
+# Ce que le conteneur Portainer raconte de lui-meme. On ne garde que les lignes
+# qui parlent d'authentification, et on les redige : un journal de connexions
+# nomme des personnes.
+if ($eps) {
+  foreach ($e in @($eps)) {
+    $id = $e.Id
+    try {
+      $liste = Invoke-RestMethod -Uri "$BaseUrl/api/endpoints/$id/docker/containers/json?all=true" -Headers $H -TimeoutSec 20
+      $cible = $liste | Where-Object { $_.Image -match 'portainer' } | Select-Object -First 1
+      if (-not $cible) { continue }
+
+      $logs = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 20 -Headers $H `
+        -Uri "$BaseUrl/api/endpoints/$id/docker/containers/$($cible.Id)/logs?stdout=true&stderr=true&tail=400&timestamps=true").Content
+
+      $auth = $logs -split "`n" | Where-Object { $_ -match '(?i)auth|login|logout|session|jwt|token|unauthorized' }
+      Write-Host ("  {0} lignes d'authentification sur les 400 dernieres du conteneur Portainer" -f @($auth).Count) -ForegroundColor Cyan
+      if (@($auth).Count -gt 0) {
+        $echantillon = @($auth) | Select-Object -First 5 | ForEach-Object {
+          [regex]::Replace($_, '(?i)(user|username|login|account)("?\s*[:=]\s*"?)([^\s",]+)', '$1$2<redige>')
+        }
+        $echantillon | Out-File (Join-Path $out "portainer_auth_extrait.txt") -Encoding utf8
+        $echantillon | ForEach-Object { Write-Host ("    {0}" -f $_.Trim()) -ForegroundColor DarkGray }
+      }
+    } catch {
+      Write-Host ("  logs du conteneur Portainer illisibles : {0}" -f $_.Exception.Message) -ForegroundColor DarkYellow
+    }
+  }
+}
+
 $token = $null; $sec.Dispose()
 Write-Host "`nTermine. JSON dans : $out`n"
