@@ -87,5 +87,34 @@ if ($eps) {
   }
 }
 
+# Les evenements Docker. Reponse en JSON par lignes, pas en tableau : elle est
+# donc lue en texte brut, et non par Invoke-RestMethod qui la refuserait.
+#
+# « until » est obligatoire : sans lui, Docker garde la connexion ouverte et
+# diffuse indefiniment. Avec lui, la fenetre est bornee et la requete se termine.
+function ProbeEvents($id) {
+  $now   = [int][double]::Parse((Get-Date -UFormat %s))
+  $since = $now - 86400
+  $url   = "$BaseUrl/api/endpoints/$id/docker/events?since=$since&until=$now"
+  try {
+    $raw = (Invoke-WebRequest -Uri $url -Headers $H -TimeoutSec 30 -UseBasicParsing).Content
+    # Les evenements portent les etiquettes des conteneurs : rien n'y est
+    # secret en principe, mais on retire quand meme ce qui en aurait l'air.
+    $raw = [regex]::Replace($raw, '("[^"]*(?i:password|passwd|token|secret|api_?key)[^"]*"\s*:\s*)"[^"]*"', '$1"<redige>"')
+    $raw | Out-File (Join-Path $out "events_env$id.ndjson") -Encoding utf8
+    $lignes = ($raw -split "`n" | Where-Object { $_.Trim() }).Count
+    Write-Host ("  OK    events_env{0,-6} {1} evenements sur 24 h" -f $id, $lignes) -ForegroundColor Green
+  } catch {
+    $code = "?"
+    if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+    Write-Host ("  HS {0,-4} events_env{1}" -f $code, $id) -ForegroundColor DarkYellow
+  }
+}
+
+if ($eps) {
+  Write-Host "`n  Evenements Docker (fenetre de 24 h, bornee)"
+  foreach ($e in @($eps)) { ProbeEvents $e.Id }
+}
+
 $token = $null; $sec.Dispose()
 Write-Host "`nTermine. JSON dans : $out`n"
