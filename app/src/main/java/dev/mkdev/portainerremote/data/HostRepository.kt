@@ -117,6 +117,26 @@ class HostRepository(private val store: HostStore) {
         }
     }
 
+    /**
+     * Donne un code de verification a un hote deja enregistre.
+     *
+     * Le client en cache est reutilise, et volontairement pas invalide : c'est
+     * lui qui porte la session qu'on vient d'ouvrir. Oublier un NAS pour lui
+     * donner six chiffres serait absurde - il faudrait ressaisir une adresse et
+     * un mot de passe qui n'ont jamais change.
+     */
+    suspend fun signIn(hostId: String, otp: String?): ApiResult<SignIn> {
+        val client = client(hostId) ?: return ApiResult.Unsupported
+        val result = client.signIn(otp)
+        if (result is ApiResult.Ok && result.value == SignIn.OK) {
+            client.deviceToken()?.let { store.saveDeviceId(hostId, it) }
+        }
+        return result
+    }
+
+    /** Vrai quand cet hote a deja obtenu un jeton d'appareil. */
+    suspend fun hasDevice(hostId: String): Boolean = !store.deviceIdOf(hostId).isNullOrBlank()
+
     /** Range le jeton d'appareil obtenu au test, une fois l'hote enregistre. */
     suspend fun rememberDevice(hostId: String, deviceId: String?) {
         if (deviceId.isNullOrBlank()) return

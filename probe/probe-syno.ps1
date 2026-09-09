@@ -247,10 +247,29 @@ try {
 
   # 403 : la double authentification est exigee. Le code arrive du telephone,
   # il n'est ni stocke ni reutilisable.
+  #
+  # On demande en meme temps un jeton d'appareil. C'est la question ouverte :
+  # DSM le rend sous le nom « did », mais pas dans toutes les versions, et sans
+  # lui l'application reclamerait un code a chaque session. Seuls les NOMS des
+  # champs rendus sont affiches - jamais leurs valeurs.
   if (-not $login.success -and (Read-Error $login) -eq 403) {
-    $form.otp_code = Read-Host "  Code de verification en deux etapes"
+    $form.otp_code            = Read-Host "  Code de verification en deux etapes"
+    $form.enable_device_token = "yes"
+    $form.device_name         = "Portainer Remote"
     $login = Invoke-RestMethod -TimeoutSec 20 -Method Post -Uri "$BaseUrl/webapi/$($authApi.path)" -Body $form
     $form.otp_code = $null
+
+    if ($login.success -and $login.data) {
+      $champs = ($login.data.PSObject.Properties).Name
+      Write-Host ("  Champs rendus par la connexion : {0}" -f ($champs -join ", ")) -ForegroundColor Cyan
+      $jeton = $champs | Where-Object { $_ -match '(?i)did|device' }
+      if ($jeton) {
+        Write-Host ("  JETON D'APPAREIL PRESENT sous « {0} » : un seul code suffira." -f ($jeton -join ", ")) -ForegroundColor Green
+      } else {
+        Write-Host "  AUCUN jeton d'appareil rendu : ce DSM reclamera un code a chaque session." -ForegroundColor Yellow
+      }
+      ($champs -join ", ") | Out-File (Join-Path $out "champs_connexion.txt") -Encoding utf8
+    }
   }
   $form.passwd = $null
   $pass = $null

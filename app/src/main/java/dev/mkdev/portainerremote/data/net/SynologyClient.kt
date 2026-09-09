@@ -217,8 +217,11 @@ class SynologyClient(
                 sid = token
                 rejectedAt = 0
                 otpPending = false
-                // DSM le nomme « did ». Il n'apparait qu'apres un code accepte.
-                (data["did"] as? JsonPrimitive)?.contentOrNull
+                // DSM le nomme « did », mais pas dans toutes les versions de
+                // son API d'authentification. Perdre le jeton sur une question
+                // d'orthographe reviendrait a reclamer un code a vie.
+                listOf("did", "device_id", "deviceId")
+                    .firstNotNullOfOrNull { (data[it] as? JsonPrimitive)?.contentOrNull }
                     ?.takeIf { it.isNotBlank() }
                     ?.let { freshDeviceId = it }
                 return@withLock SignIn.OK

@@ -208,6 +208,15 @@ fun HostScreen(
                         return@LazyColumn
                     }
 
+                    if (ui.otpAsked) {
+                        item {
+                            OtpCard(
+                                sending = ui.sendingOtp,
+                                onSubmit = viewModel::submitOtp,
+                            )
+                        }
+                    }
+
                     item { IdentityCard(host, ui.servers) }
 
                     item { UsageCard(ui.usage) }
@@ -567,6 +576,59 @@ private fun Gauge(label: String, percent: Int) {
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
+    }
+}
+
+/**
+ * Le code de verification, demande la ou l'on est.
+ *
+ * Un NAS peut reclamer un code alors qu'il est deja enregistre : son jeton
+ * d'appareil a ete revoque, ou il n'en delivre pas. Faire oublier le NAS pour
+ * repondre reviendrait a ressaisir une adresse et un mot de passe qui n'ont
+ * jamais change.
+ */
+@Composable
+private fun OtpCard(sending: Boolean, onSubmit: (String) -> Unit) {
+    var code by remember { mutableStateOf("") }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+        ),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text("Code de vérification", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Ce NAS demande un code pour ouvrir la session. Rien d'autre n'est à " +
+                    "ressaisir : ni l'adresse, ni le mot de passe.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it.filter(Char::isDigit).take(8) },
+                    label = { Text("Code à 6 chiffres") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = { onSubmit(code) },
+                    enabled = !sending && code.length >= 6,
+                ) {
+                    Text(if (sending) "Envoi…" else "Valider")
+                }
+            }
+        }
     }
 }
 

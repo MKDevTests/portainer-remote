@@ -53,6 +53,12 @@ data class HostUi(
      * fait alors apparaitre son champ, plutot que d'echouer sans expliquer.
      */
     val otpNeeded: Boolean = false,
+    /**
+     * Vrai quand l'hote deja enregistre reclame un code. La carte de saisie
+     * apparait alors sur son ecran : le seul endroit ou l'on puisse repondre.
+     */
+    val otpAsked: Boolean = false,
+    val sendingOtp: Boolean = false,
     val busyApp: String? = null,
     val message: String? = null,
 ) {
@@ -178,6 +184,7 @@ class HostViewModel(
                     // Le message vient de la lecture qui compte pour cet
                     // hote : sur un systeme sans applications, s'en tenir a
                     // « apps » reviendrait a ne jamais rien dire.
+                    otpAsked = needsOtp(appsResult, usage.await()),
                     message = messageFor(state, appsResult, usage.await()),
                 )
             }
@@ -444,6 +451,57 @@ class HostViewModel(
      * d'appareil revoque, et le dire evite de faire ressaisir un mot de passe
      * qui n'a jamais change.
      */
+    private fun needsOtp(apps: ApiResult<List<HostApp>>, usage: ApiResult<HostUsage>): Boolean {
+        val principal = if (apps is ApiResult.Unsupported) usage else apps
+        return principal is ApiResult.HttpError && principal.code == 403
+    }
+
+    /**
+     * Donne le code au NAS, sans rien ressaisir d'autre.
+     *
+     * Si l'hote rend un jeton d'appareil, c'est la derniere fois qu'on lui
+     * demande. Sinon, on le dit : un code par session est penible, mais le
+     * decouvrir soi-meme l'est davantage.
+     */
+    fun submitOtp(code: String) {
+        val hostId = _ui.value.selectedId
+        if (hostId.isBlank() || code.isBlank()) return
+        viewModelScope.launch {
+            _ui.update { it.copy(sendingOtp = true, message = null) }
+            val result = hosts.signIn(hostId, code.trim())
+            val outcome = (result as? ApiResult.Ok)?.value
+            if (outcome == SignIn.OK) {
+                val remembered = hosts.hasDevice(hostId)
+                _ui.update {
+                    it.copy(
+                        sendingOtp = false,
+                        otpAsked = false,
+                        message = if (remembered) {
+                            "Connecté. Cet appareil est reconnu : plus de code à saisir."
+                        } else {
+                            "Connecté. Ce NAS n'a pas délivré de jeton d'appareil : " +
+                                "un code sera redemandé à la prochaine session."
+                        },
+                    )
+                }
+                refresh()
+            } else {
+                _ui.update {
+                    it.copy(
+                        sendingOtp = false,
+                        message = when (outcome) {
+                            SignIn.OTP_REFUSED ->
+                                "Code refusé. Il expire vite : réessaie avec le suivant."
+
+                            SignIn.OTP_REQUIRED -> "Le NAS attend toujours un code."
+                            else -> "Le NAS a refusé la connexion."
+                        },
+                    )
+                }
+            }
+        }
+    }
+
     private fun messageFor(
         state: HostUi,
         apps: ApiResult<List<HostApp>>,
@@ -451,10 +509,9 @@ class HostViewModel(
     ): String? {
         val principal = if (apps is ApiResult.Unsupported) usage else apps
         if (principal is ApiResult.Ok) return state.message
-        if (principal is ApiResult.HttpError && principal.code == 403) {
-            return "Ce NAS redemande un code de vérification. Oublie-le et rajoute-le " +
-                "pour en saisir un nouveau."
-        }
+        // La carte de saisie dit deja quoi faire : un message par-dessus
+        // repeterait la meme chose au meme moment.
+        if (principal is ApiResult.HttpError && principal.code == 403) return null
         if (principal is ApiResult.Unsupported) return state.message
         return principal.errorText()
     }
