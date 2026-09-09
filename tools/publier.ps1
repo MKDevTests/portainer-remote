@@ -31,6 +31,27 @@ function Echec($message) {
   exit 1
 }
 
+<#
+  Lance un programme externe et ne juge que son code de sortie.
+
+  Sans cela, la publication s'arretait au milieu : git ecrit son avancement sur
+  la sortie d'erreur, et avec « ErrorActionPreference = Stop » PowerShell prend
+  cette sortie pour un echec. La branche etait poussee, l'etiquette non, et la
+  release restait a creer a la main - c'est arrive en publiant la 1.7.0.
+#>
+function Executer($programme, [string[]]$arguments) {
+  $ancien = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  & $programme @arguments 2>&1 | ForEach-Object {
+    Write-Host ("  {0}" -f $_) -ForegroundColor DarkGray
+  }
+  $code = $LASTEXITCODE
+  $ErrorActionPreference = $ancien
+  if ($code -ne 0) {
+    Echec ("{0} {1} a echoue (code {2})" -f $programme, ($arguments -join " "), $code)
+  }
+}
+
 # ------------------------------------------------------- ce qui est declare
 $gradle = Get-Content "app\build.gradle.kts" -Raw
 if ($gradle -notmatch 'versionName\s*=\s*"([^"]+)"') { Echec "versionName introuvable" }
@@ -90,17 +111,17 @@ $fichier = Join-Path $env:TEMP "portainer-remote-$Version.apk"
 Copy-Item $apk $fichier -Force
 
 $etiquette = "v$Version"
-git tag $etiquette
-git push origin main
-git push origin $etiquette
+Executer "git" @("tag", $etiquette)
+Executer "git" @("push", "origin", "main")
+Executer "git" @("push", "origin", $etiquette)
 
 $titre = $Titre
 if (-not $titre) { $titre = $Version }
 
 if ($Notes -and (Test-Path $Notes)) {
-  gh release create $etiquette $fichier --title $titre --notes-file $Notes
+  Executer "gh" @("release", "create", $etiquette, $fichier, "--title", $titre, "--notes-file", $Notes)
 } else {
-  gh release create $etiquette $fichier --title $titre --generate-notes
+  Executer "gh" @("release", "create", $etiquette, $fichier, "--title", $titre, "--generate-notes")
 }
 
 Write-Host ""
