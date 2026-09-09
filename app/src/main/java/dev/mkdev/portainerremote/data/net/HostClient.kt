@@ -13,6 +13,7 @@ import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.SignIn
 
 /**
  * Ce que l'application demande a un NAS, quel qu'il soit.
@@ -30,7 +31,22 @@ interface HostClient {
     /** Reconnait l'hote sans identifiants. Faux : on n'envoie pas le mot de passe. */
     suspend fun detect(): Boolean
 
-    suspend fun signIn(): ApiResult<Boolean>
+    /**
+     * Ouvre une session.
+     *
+     * [otp] est le code de verification en deux etapes, quand l'hote en
+     * reclame un. Il n'est ni conserve ni reutilisable : ce qui est garde, si
+     * l'hote en rend un, c'est le jeton d'appareil rendu par [deviceToken].
+     */
+    suspend fun signIn(otp: String? = null): ApiResult<SignIn>
+
+    /**
+     * Le jeton d'appareil obtenu lors de la derniere connexion avec un code.
+     *
+     * Null quand l'hote n'en delivre pas, ou quand aucun code n'a ete fourni.
+     * L'appelant le range pour ne plus redemander de code.
+     */
+    fun deviceToken(): String? = null
 
     suspend fun apps(): ApiResult<List<HostApp>>
 
@@ -77,9 +93,9 @@ interface HostClient {
          * ce que l'utilisateur a choisi, et un type non gere donne un client qui
          * le dit au lieu de tenter sa chance sur des routes inconnues.
          */
-        fun of(host: Host, password: String): HostClient = when (host.kind) {
+        fun of(host: Host, password: String, deviceId: String? = null): HostClient = when (host.kind) {
             HostKind.ZIMA -> ZimaClient(host.baseUrl, host.username, password)
-            HostKind.SYNOLOGY -> SynologyClient(host.baseUrl, host.username, password)
+            HostKind.SYNOLOGY -> SynologyClient(host.baseUrl, host.username, password, deviceId)
             HostKind.QNAP -> UnsupportedHostClient
         }
     }
@@ -94,7 +110,7 @@ interface HostClient {
  */
 object UnsupportedHostClient : HostClient {
     override suspend fun detect(): Boolean = false
-    override suspend fun signIn(): ApiResult<Boolean> = ApiResult.Unsupported
+    override suspend fun signIn(otp: String?): ApiResult<SignIn> = ApiResult.Unsupported
     override suspend fun apps(): ApiResult<List<HostApp>> = ApiResult.Unsupported
     override suspend fun setAppStatus(appId: String, action: HostAppAction): ApiResult<Int> =
         ApiResult.Unsupported

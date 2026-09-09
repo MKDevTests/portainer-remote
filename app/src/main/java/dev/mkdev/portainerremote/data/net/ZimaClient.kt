@@ -12,6 +12,7 @@ import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.NetCounters
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.SignIn
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -243,8 +244,9 @@ class ZimaClient(
     }.getOrDefault(false)
 
     /** Teste les identifiants. Le jeton obtenu reste en memoire. */
-    override suspend fun signIn(): ApiResult<Boolean> = attempt {
-        if (ensureToken() == null) ApiResult.HttpError(401) else ApiResult.Ok(true)
+    /** ZimaOS ne connait pas la double authentification : le code est ignore. */
+    override suspend fun signIn(otp: String?): ApiResult<SignIn> = attempt {
+        if (ensureToken() == null) ApiResult.Ok(SignIn.REFUSED) else ApiResult.Ok(SignIn.OK)
     }
 
     // --------------------------------------------------------- applications

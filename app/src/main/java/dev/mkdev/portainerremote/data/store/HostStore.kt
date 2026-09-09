@@ -28,6 +28,13 @@ private data class StoredHost(
     val username: String = "",
     /** Chiffre par [SecretCrypto], comme le secret Portainer. */
     val secret: String = "",
+    /**
+     * Le jeton d'appareil rendu par l'hote apres une double authentification
+     * reussie, scelle lui aussi. Il evite de redemander un code a chaque
+     * connexion : c'est exactement ce que fait « faire confiance a cet
+     * appareil » dans l'interface de DSM.
+     */
+    val deviceSecret: String = "",
     /** Lien optionnel vers un serveur Portainer. */
     val serverId: String = "",
     val portainerAppId: String = "",
@@ -88,6 +95,31 @@ class HostStore(context: Context) {
         raw().firstOrNull { it.id == id }?.secret
             ?.takeIf { it.isNotEmpty() }?.let(SecretCrypto::decrypt)
 
+    /** Jeton d'appareil en clair. Null tant qu'aucune double authentification n'a eu lieu. */
+    suspend fun deviceIdOf(id: String): String? =
+        raw().firstOrNull { it.id == id }?.deviceSecret
+            ?.takeIf { it.isNotEmpty() }?.let(SecretCrypto::decrypt)
+
+    /**
+     * Range le jeton d'appareil obtenu apres un code de verification.
+     *
+     * Il est scelle par le Keystore comme le mot de passe : c'est lui qui
+     * dispense des codes suivants, donc le perdre est sans gravite - un
+     * nouveau code le regenere - mais le laisser en clair n'aurait pas de sens.
+     */
+    suspend fun saveDeviceId(id: String, deviceId: String?) {
+        appContext.hostDataStore.edit { prefs ->
+            val current = decode(prefs[key]).toMutableList()
+            val index = current.indexOfFirst { it.id == id }
+            if (index < 0) return@edit
+            current[index] = current[index].copy(
+                deviceSecret = deviceId?.takeIf { it.isNotBlank() }
+                    ?.let(SecretCrypto::encrypt).orEmpty(),
+            )
+            prefs[key] = json.encodeToString(current.toList())
+        }
+    }
+
     /**
      * Cree ou met a jour un hote, et renvoie son identifiant.
      * [plainPassword] a null conserve le mot de passe existant : on peut ainsi
@@ -99,6 +131,9 @@ class HostStore(context: Context) {
             val current = decode(prefs[key]).toMutableList()
             val index = current.indexOfFirst { it.id == id }
             val kept = current.getOrNull(index)?.secret.orEmpty()
+            // Le jeton d'appareil survit a un changement de nom ou de serveur
+            // associe : seul un nouveau mot de passe le remet en question.
+            val keptDevice = current.getOrNull(index)?.deviceSecret.orEmpty()
             val entry = StoredHost(
                 id = id,
                 kind = host.kind.name,
@@ -106,6 +141,7 @@ class HostStore(context: Context) {
                 baseUrl = host.baseUrl.trimEnd('/'),
                 username = host.username,
                 secret = plainPassword?.let(SecretCrypto::encrypt) ?: kept,
+                deviceSecret = keptDevice,
                 serverId = host.serverId,
                 portainerAppId = host.portainerAppId,
             )

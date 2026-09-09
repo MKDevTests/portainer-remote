@@ -15,6 +15,7 @@ import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.LogSession
 import dev.mkdev.portainerremote.domain.NetCounters
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.SignIn
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -53,6 +54,11 @@ class SynologyClient(
     baseUrl: String,
     private val username: String,
     private val password: String,
+    /**
+     * Le jeton d'appareil obtenu lors d'une precedente double authentification.
+     * Tant qu'il est valide, DSM ne redemande pas de code.
+     */
+    private val deviceId: String? = null,
 ) : HostClient {
 
     private val root = baseUrl.trimEnd('/')
@@ -123,9 +129,28 @@ class SynologyClient(
 
     // ------------------------------------------------------------- session
 
-    override suspend fun signIn(): ApiResult<Boolean> = attempt {
-        val ok = ensureSession()
-        if (ok) ApiResult.Ok(true) else ApiResult.HttpError(401)
+    /**
+     * Le jeton d'appareil rendu par DSM lors d'une connexion avec code.
+     * L'appelant le range pour ne plus redemander de code ensuite.
+     */
+    @Volatile
+    private var freshDeviceId: String? = null
+
+    /**
+     * Vrai quand l'hote reclame un code que personne n'a saisi.
+     *
+     * Un jeton d'appareil finit par etre revoque - l'utilisateur change son mot
+     * de passe, ou retire l'appareil de confiance dans DSM. Sans ce drapeau,
+     * l'ecran se contenterait de rester vide, ce qui ressemble a une panne
+     * reseau alors qu'il suffit de six chiffres.
+     */
+    @Volatile
+    private var otpPending: Boolean = false
+
+    override fun deviceToken(): String? = freshDeviceId
+
+    override suspend fun signIn(otp: String?): ApiResult<SignIn> = attempt {
+        ApiResult.Ok(login(otp))
     }
 
     /**
@@ -135,16 +160,31 @@ class SynologyClient(
      * l'adresse, il serait recopie tel quel dans le journal de connexion de
      * DSM - celui-la meme que l'application affiche par ailleurs.
      */
-    private suspend fun ensureSession(): Boolean {
-        sid?.let { return true }
-        if (username.isBlank() || password.isEmpty()) return false
-        if (System.currentTimeMillis() - rejectedAt < REJECT_PAUSE_MS) return false
+    private suspend fun ensureSession(): Boolean = login(null) == SignIn.OK
+
+    /**
+     * Ouvre une session, une seule a la fois.
+     *
+     * La double authentification se passe en deux temps, et c'est DSM qui les
+     * impose : sans code, il repond 403 « code non fourni ». On lui en donne un,
+     * en demandant en meme temps un jeton d'appareil - c'est exactement ce que
+     * fait « faire confiance a cet appareil » dans son interface. Ce jeton
+     * remplace le code aux connexions suivantes, et c'est lui qui evite de
+     * reclamer six chiffres a chaque ouverture de l'application.
+     */
+    private suspend fun login(otp: String?): SignIn {
+        sid?.let { return SignIn.OK }
+        if (username.isBlank() || password.isEmpty()) return SignIn.REFUSED
+        // Un code fourni a la main vaut une intention neuve : il annule
+        // l'abstention posee par le refus precedent.
+        if (otp.isNullOrBlank() && System.currentTimeMillis() - rejectedAt < REJECT_PAUSE_MS) {
+            return SignIn.REFUSED
+        }
 
         return loginLock.withLock {
-            sid?.let { return@withLock true }
-            if (System.currentTimeMillis() - rejectedAt < REJECT_PAUSE_MS) return@withLock false
+            sid?.let { return@withLock SignIn.OK }
 
-            val api = catalogue()?.get("SYNO.API.Auth") ?: return@withLock false
+            val api = catalogue()?.get("SYNO.API.Auth") ?: return@withLock SignIn.REFUSED
             val response = runCatching {
                 http.submitForm(
                     url = "$root/webapi/${api.path}",
@@ -156,23 +196,58 @@ class SynologyClient(
                         append("passwd", password)
                         append("session", "PortainerRemote")
                         append("format", "sid")
+                        if (!otp.isNullOrBlank()) {
+                            append("otp_code", otp)
+                            // Demande le jeton d'appareil en meme temps : sans
+                            // lui, chaque connexion reclamerait un code.
+                            append("enable_device_token", "yes")
+                            append("device_name", "Portainer Remote")
+                        } else if (!deviceId.isNullOrBlank()) {
+                            append("device_id", deviceId)
+                        }
                     },
                 )
-            }.getOrNull() ?: return@withLock false
+            }.getOrNull() ?: return@withLock SignIn.REFUSED
 
             val body = parse(response.bodyAsText())
-            val token = ((body?.get("data") as? JsonObject)?.get("sid") as? JsonPrimitive)?.contentOrNull
+            val data = body?.get("data") as? JsonObject
+            val token = (data?.get("sid") as? JsonPrimitive)?.contentOrNull
 
-            if (body?.get("success")?.let { (it as? JsonPrimitive)?.booleanOrNull } != true || token.isNullOrBlank()) {
-                // Un refus est definitif jusqu'a ce que l'utilisateur agisse :
-                // insister ferait bannir l'adresse par DSM lui-meme.
-                rejectedAt = System.currentTimeMillis()
-                sid = null
-                return@withLock false
+            if (body?.succeeded() == true && !token.isNullOrBlank()) {
+                sid = token
+                rejectedAt = 0
+                otpPending = false
+                // DSM le nomme « did ». Il n'apparait qu'apres un code accepte.
+                (data["did"] as? JsonPrimitive)?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+                    ?.let { freshDeviceId = it }
+                return@withLock SignIn.OK
             }
 
-            sid = token
-            true
+            // 403 : DSM veut un code. 404 : celui qu'on a donne ne convient
+            // pas. Aucun des deux ne se corrige en ressaisissant le mot de
+            // passe, et les confondre enverrait chercher au mauvais endroit.
+            val code = ((body?.get("error") as? JsonObject)?.get("code") as? JsonPrimitive)
+                ?.doubleOrNull?.toInt()
+
+            when (code) {
+                403, 406 -> {
+                    otpPending = true
+                    SignIn.OTP_REQUIRED
+                }
+
+                404 -> {
+                    otpPending = true
+                    SignIn.OTP_REFUSED
+                }
+                else -> {
+                    // Insister avec un mot de passe devenu faux ferait bannir
+                    // l'adresse par DSM lui-meme : apres un refus, on attend.
+                    rejectedAt = System.currentTimeMillis()
+                    sid = null
+                    SignIn.REFUSED
+                }
+            }
         }
     }
 
@@ -215,7 +290,7 @@ class SynologyClient(
     // -------------------------------------------------------------- lecture
 
     override suspend fun machine(): ApiResult<HostMachine> = attempt {
-        val data = call("SYNO.Core.System", "info")?.data() ?: return@attempt ApiResult.Unsupported
+        val data = call("SYNO.Core.System", "info")?.data() ?: return@attempt refused()
         ApiResult.Ok(
             HostMachine(
                 model = data.string("model").orEmpty(),
@@ -248,7 +323,7 @@ class SynologyClient(
      */
     override suspend fun usage(): ApiResult<HostUsage> = attempt {
         val data = call("SYNO.Core.System.Utilization", "get")?.data()
-            ?: return@attempt ApiResult.Unsupported
+            ?: return@attempt refused()
 
         val cpu = data["cpu"] as? JsonObject
         val processeur = listOf("user_load", "system_load", "other_load")
@@ -306,9 +381,9 @@ class SynologyClient(
      */
     override suspend fun disks(): ApiResult<List<HostDisk>> = attempt {
         val data = call("SYNO.Storage.CGI.Storage", "load_info")
-            ?: return@attempt ApiResult.Unsupported
+            ?: return@attempt refused()
 
-        val body = data.data() ?: return@attempt ApiResult.Unsupported
+        val body = data.data() ?: return@attempt refused()
         val result = mutableListOf<HostDisk>()
 
         (body["volumes"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>().forEach { volume ->
@@ -353,8 +428,8 @@ class SynologyClient(
     /** DSM compte en minutes d'inactivite : il n'y a rien a interpreter. */
     override suspend fun diskSleep(): ApiResult<DiskSleep> = attempt {
         val data = call("SYNO.Core.Hardware.Hibernation", "get")?.data()
-            ?: return@attempt ApiResult.Unsupported
-        val minutes = data.int("internal_hd_idletime") ?: return@attempt ApiResult.Unsupported
+            ?: return@attempt refused()
+        val minutes = data.int("internal_hd_idletime") ?: return@attempt refused()
         ApiResult.Ok(DiskSleep.fromMinutes(minutes))
     }
 
@@ -372,7 +447,7 @@ class SynologyClient(
      */
     override suspend fun scheduledOff(): ApiResult<ScheduledOff> = attempt {
         val data = call("SYNO.Core.Hardware.PowerSchedule", "load")?.data()
-            ?: return@attempt ApiResult.Unsupported
+            ?: return@attempt refused()
 
         val tasks = (data["poweroff_tasks"] as? JsonArray).orEmpty().filterIsInstance<JsonObject>()
         val task = tasks.firstOrNull { it.bool("enabled") != false }
@@ -426,7 +501,7 @@ class SynologyClient(
         val logs = call("SYNO.Core.SyslogClient.Log", "list", "start=0&limit=$borne$filtre")
         val sessions = call("SYNO.Core.CurrentConnection", "list", "start=0&limit=50")
 
-        if (logs == null && sessions == null) return@attempt ApiResult.Unsupported
+        if (logs == null && sessions == null) return@attempt refused()
 
         val body = logs?.data()
         val entries = (body?.get("items") as? JsonArray).orEmpty()
@@ -510,6 +585,16 @@ class SynologyClient(
     }
 
     // ---------------------------------------------------------------- outils
+
+    /**
+     * Ce qu'on repond quand une lecture n'a pas abouti.
+     *
+     * « Non gere » et « il manque un code » se ressemblent a l'ecran - rien ne
+     * s'affiche - mais l'un se corrige en attendant une prochaine version et
+     * l'autre en saisissant six chiffres.
+     */
+    private fun <T> refused(): ApiResult<T> =
+        if (otpPending) ApiResult.HttpError(403) else ApiResult.Unsupported
 
     private fun parse(raw: String): JsonObject? =
         runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull()

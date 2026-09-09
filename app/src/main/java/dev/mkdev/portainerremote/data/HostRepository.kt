@@ -14,6 +14,7 @@ import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.LogLevel
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.SignIn
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -55,7 +56,7 @@ class HostRepository(private val store: HostStore) {
         clients[hostId]?.let { (cached, client) -> if (cached == host) return@withLock client }
         clients.remove(hostId)?.second?.close()
         val password = store.passwordOf(hostId).orEmpty()
-        val client = HostClient.of(host, password)
+        val client = HostClient.of(host, password, store.deviceIdOf(hostId))
         clients[hostId] = host to client
         client
     }
@@ -88,18 +89,39 @@ class HostRepository(private val store: HostStore) {
         invalidate(hostId)
     }
 
+    /** Ce qu'un test a donne, et ce qu'il a rapporte. */
+    data class TestResult(
+        val outcome: ApiResult<SignIn>,
+        /** Present seulement apres une double authentification reussie. */
+        val deviceId: String? = null,
+    )
+
     /**
      * Teste une adresse et des identifiants avant de les enregistrer.
-     * On separe volontairement les deux echecs : une adresse qui ne repond pas
-     * et un mot de passe refuse ne se corrigent pas de la meme facon.
+     *
+     * Les echecs sont separes a dessein : une adresse qui ne repond pas, un mot
+     * de passe refuse et un code de verification manquant ne se corrigent pas
+     * au meme endroit, et les confondre envoie chercher la panne ailleurs.
      */
-    suspend fun test(host: Host, password: String): ApiResult<Boolean> {
-        val client = HostClient.of(host, password)
+    suspend fun test(host: Host, password: String, otp: String? = null): TestResult {
+        val client = HostClient.of(host, password, store.deviceIdOf(host.id))
         return try {
-            if (!client.detect()) ApiResult.Unsupported else client.signIn()
+            val outcome = if (!client.detect()) {
+                ApiResult.Unsupported
+            } else {
+                client.signIn(otp)
+            }
+            TestResult(outcome, client.deviceToken())
         } finally {
             client.close()
         }
+    }
+
+    /** Range le jeton d'appareil obtenu au test, une fois l'hote enregistre. */
+    suspend fun rememberDevice(hostId: String, deviceId: String?) {
+        if (deviceId.isNullOrBlank()) return
+        store.saveDeviceId(hostId, deviceId)
+        invalidate(hostId)
     }
 
     /**

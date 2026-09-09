@@ -17,6 +17,7 @@ import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
 import dev.mkdev.portainerremote.domain.NetRate
 import dev.mkdev.portainerremote.domain.ScheduledOff
+import dev.mkdev.portainerremote.domain.SignIn
 import dev.mkdev.portainerremote.domain.Server
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -47,6 +48,11 @@ data class HostUi(
     val rates: List<NetRate> = emptyList(),
     val scheduledOff: ScheduledOff? = null,
     val savingSchedule: Boolean = false,
+    /**
+     * Vrai quand l'hote a reclame un code de verification. La carte de saisie
+     * fait alors apparaitre son champ, plutot que d'echouer sans expliquer.
+     */
+    val otpNeeded: Boolean = false,
     val busyApp: String? = null,
     val message: String? = null,
 ) {
@@ -169,7 +175,10 @@ class HostViewModel(
                     // Une extinction programmee absente n'est pas une erreur :
                     // tous les systemes ne la proposent pas.
                     scheduledOff = (schedule.await() as? ApiResult.Ok)?.value,
-                    message = if (appsResult is ApiResult.Ok) state.message else appsResult.errorText(),
+                    // Le message vient de la lecture qui compte pour cet
+                    // hote : sur un systeme sans applications, s'en tenir a
+                    // « apps » reviendrait a ne jamais rien dire.
+                    message = messageFor(state, appsResult, usage.await()),
                 )
             }
             realignPortainerApp()
@@ -184,6 +193,7 @@ class HostViewModel(
         username: String,
         password: String,
         serverId: String,
+        otp: String = "",
     ) {
         viewModelScope.launch {
             _ui.update { it.copy(testing = true, message = null) }
@@ -194,12 +204,58 @@ class HostViewModel(
                 username = username.trim(),
                 serverId = serverId,
             )
-            when (val result = hosts.test(candidate, password)) {
-                is ApiResult.Ok -> {
-                    val id = hosts.save(candidate, password)
-                    _ui.update { it.copy(testing = false, adding = false, selectedId = id) }
-                    reload()
-                    _ui.update { it.copy(message = "NAS connecté.") }
+            val result = hosts.test(candidate, password, otp.trim().ifBlank { null })
+            when (val outcome = result.outcome) {
+                is ApiResult.Ok -> when (outcome.value) {
+                    SignIn.OK -> {
+                        val id = hosts.save(candidate, password)
+                        // Le jeton d'appareil se range apres l'enregistrement :
+                        // avant, l'hote n'a pas encore d'identifiant sous
+                        // lequel le ranger.
+                        hosts.rememberDevice(id, result.deviceId)
+                        _ui.update {
+                            it.copy(
+                                testing = false,
+                                adding = false,
+                                otpNeeded = false,
+                                selectedId = id,
+                            )
+                        }
+                        reload()
+                        _ui.update {
+                            it.copy(
+                                message = if (result.deviceId != null) {
+                                    "NAS connecté. Cet appareil est reconnu : " +
+                                        "plus de code à saisir."
+                                } else {
+                                    "NAS connecté."
+                                },
+                            )
+                        }
+                    }
+
+                    SignIn.OTP_REQUIRED -> _ui.update {
+                        it.copy(
+                            testing = false,
+                            otpNeeded = true,
+                            message = "Ce NAS demande un code de vérification.",
+                        )
+                    }
+
+                    SignIn.OTP_REFUSED -> _ui.update {
+                        it.copy(
+                            testing = false,
+                            otpNeeded = true,
+                            message = "Code refusé. Il expire vite : réessaie avec le suivant.",
+                        )
+                    }
+
+                    SignIn.REFUSED -> _ui.update {
+                        it.copy(
+                            testing = false,
+                            message = "Identifiant ou mot de passe refusé par le NAS.",
+                        )
+                    }
                 }
 
                 is ApiResult.Unsupported -> _ui.update {
@@ -213,7 +269,7 @@ class HostViewModel(
                     )
                 }
 
-                else -> _ui.update { it.copy(testing = false, message = result.errorText()) }
+                else -> _ui.update { it.copy(testing = false, message = outcome.errorText()) }
             }
         }
     }
@@ -381,6 +437,28 @@ class HostViewModel(
      * forme. Sans cela, la relance enverrait un identifiant que l'hote ne
      * connait plus, et echouerait sans dire pourquoi.
      */
+    /**
+     * Le message d'echec, choisi parmi les lectures faites.
+     *
+     * Un 403 sur un Synology n'est pas un mot de passe faux : c'est un jeton
+     * d'appareil revoque, et le dire evite de faire ressaisir un mot de passe
+     * qui n'a jamais change.
+     */
+    private fun messageFor(
+        state: HostUi,
+        apps: ApiResult<List<HostApp>>,
+        usage: ApiResult<HostUsage>,
+    ): String? {
+        val principal = if (apps is ApiResult.Unsupported) usage else apps
+        if (principal is ApiResult.Ok) return state.message
+        if (principal is ApiResult.HttpError && principal.code == 403) {
+            return "Ce NAS redemande un code de vérification. Oublie-le et rajoute-le " +
+                "pour en saisir un nouveau."
+        }
+        if (principal is ApiResult.Unsupported) return state.message
+        return principal.errorText()
+    }
+
     private suspend fun realignPortainerApp() {
         val host = _ui.value.selected ?: return
         val app = _ui.value.portainerApp ?: return

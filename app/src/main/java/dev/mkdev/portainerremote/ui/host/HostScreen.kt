@@ -199,6 +199,7 @@ fun HostScreen(
                                 servers = ui.servers,
                                 testing = ui.testing,
                                 canCancel = ui.hosts.isNotEmpty(),
+                                otpNeeded = ui.otpNeeded,
                                 suggestUrl = viewModel::suggestedUrl,
                                 onCancel = viewModel::cancelAdding,
                                 onConnect = viewModel::connect,
@@ -333,15 +334,17 @@ private fun SetupCard(
     servers: List<Server>,
     testing: Boolean,
     canCancel: Boolean,
+    otpNeeded: Boolean,
     suggestUrl: (String) -> String,
     onCancel: () -> Unit,
-    onConnect: (HostKind, String, String, String, String, String) -> Unit,
+    onConnect: (HostKind, String, String, String, String, String, String) -> Unit,
 ) {
     var kind by remember { mutableStateOf(HostKind.ZIMA) }
     var serverId by remember { mutableStateOf(servers.firstOrNull()?.id.orEmpty()) }
     var label by remember { mutableStateOf("") }
     var url by remember { mutableStateOf(suggestUrl(serverId)) }
     var user by remember { mutableStateOf("") }
+    var otp by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var urlTouched by remember { mutableStateOf(false) }
 
@@ -488,6 +491,24 @@ private fun SetupCard(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            if (otpNeeded) {
+                OutlinedTextField(
+                    value = otp,
+                    onValueChange = { otp = it.filter(Char::isDigit).take(8) },
+                    label = { Text("Code de vérification") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Ce NAS utilise la double authentification. Le code n'est demandé " +
+                        "qu'une fois : il sert à obtenir un jeton d'appareil, scellé par le " +
+                        "Keystore comme le mot de passe, qui le remplacera ensuite.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -496,9 +517,10 @@ private fun SetupCard(
                     OutlinedButton(onClick = onCancel, enabled = !testing) { Text("Annuler") }
                 }
                 Button(
-                    onClick = { onConnect(kind, label, url, user, password, serverId) },
+                    onClick = { onConnect(kind, label, url, user, password, serverId, otp) },
                     enabled = !testing && kind.supported && url.isNotBlank() &&
-                        user.isNotBlank() && password.isNotEmpty(),
+                        user.isNotBlank() && password.isNotEmpty() &&
+                        (!otpNeeded || otp.length >= 6),
                 ) {
                     Text(if (testing) "Connexion…" else "Tester et enregistrer")
                 }

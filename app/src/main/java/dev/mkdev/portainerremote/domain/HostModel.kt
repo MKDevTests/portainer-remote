@@ -149,6 +149,24 @@ data class HostUsage(
  * remplissage. Additionner ce que les systemes de fichiers declarent est la
  * seule mesure qui corresponde a ce qu'on voit.
  */
+/**
+ * L'issue d'une tentative de connexion.
+ *
+ * Un mot de passe refuse et un code de verification manquant ne se corrigent
+ * pas de la meme facon : les confondre ferait ressaisir un mot de passe juste.
+ */
+enum class SignIn {
+    OK,
+
+    /** L'hote exige un code de verification en deux etapes. */
+    OTP_REQUIRED,
+
+    /** Le code fourni a ete refuse : il a expire, ou il a ete mal recopie. */
+    OTP_REFUSED,
+
+    REFUSED,
+}
+
 /** Ce qu'une ligne de la carte decrit vraiment. */
 enum class DiskRole { VOLUME, DRIVE }
 
