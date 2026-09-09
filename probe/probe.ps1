@@ -100,11 +100,12 @@ if ($eps) {
 #
 #   2. La lecture est plafonnee. Une fenetre bornee devrait suffire, mais un
 #      plafond garantit qu'aucune erreur de date ne fera plus attendre.
-function ProbeEvents($id) {
+function ProbeEvents($id, $heures, $filtre, $nom) {
   $now   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-  $since = $now - 86400
+  $since = $now - ($heures * 3600)
   $until = $now - 1
   $url   = "$BaseUrl/api/endpoints/$id/docker/events?since=$since&until=$until"
+  if ($filtre) { $url += "&filters=" + [uri]::EscapeDataString($filtre) }
 
   $resp = $null; $reader = $null
   try {
@@ -128,21 +129,35 @@ function ProbeEvents($id) {
     # Les evenements portent les etiquettes des conteneurs : rien n'y est
     # secret en principe, mais on retire quand meme ce qui en aurait l'air.
     $raw = [regex]::Replace($sb.ToString(), '("[^"]*(?i:password|passwd|token|secret|api_?key)[^"]*"\s*:\s*)"[^"]*"', '$1"<redige>"')
-    $raw | Out-File (Join-Path $out "events_env$id.ndjson") -Encoding utf8
-    Write-Host ("  OK    events_env{0,-6} {1} evenements sur 24 h" -f $id, $lignes) -ForegroundColor Green
+    $raw | Out-File (Join-Path $out "$nom`_env$id.ndjson") -Encoding utf8
+    Write-Host ("  OK    {0,-16} {1,5} evenements sur {2} h" -f "$nom`_env$id", $lignes, $heures) -ForegroundColor Green
   } catch {
     $code = "?"
     if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
-    Write-Host ("  HS {0,-4} events_env{1}  {2}" -f $code, $id, $_.Exception.Message) -ForegroundColor DarkYellow
+    Write-Host ("  HS {0,-4} {1}_env{2}  {3}" -f $code, $nom, $id, $_.Exception.Message) -ForegroundColor DarkYellow
   } finally {
     if ($reader) { $reader.Close() }
     if ($resp)   { $resp.Close() }
   }
 }
 
+# La premiere mesure a tranche : sur 24 h, 256 evenements, tous des sondes de
+# sante (exec_create, exec_start, exec_die). Aucun demarrage, aucun arret. Un
+# flux brut serait donc un mur de bruit ou l'on ne verrait jamais ce qui compte.
+#
+# On mesure donc deux choses : ce que sept jours contiennent vraiment, et si
+# Docker sait filtrer lui-meme - auquel cas le tri se fait avant le reseau, pas
+# apres.
+$interessants = '{"type":["container","image","volume","network"],' +
+                '"event":["start","stop","die","kill","restart","create","destroy",' +
+                '"health_status","oom","pull","delete"]}'
+
 if ($eps) {
-  Write-Host "`n  Evenements Docker (24 h, fenetre fermee dans le passe)"
-  foreach ($e in @($eps)) { ProbeEvents $e.Id }
+  Write-Host "`n  Evenements Docker (fenetre fermee dans le passe)"
+  foreach ($e in @($eps)) {
+    ProbeEvents $e.Id 168 $null        "events_brut"
+    ProbeEvents $e.Id 168 $interessants "events_filtres"
+  }
 }
 
 $token = $null; $sec.Dispose()
