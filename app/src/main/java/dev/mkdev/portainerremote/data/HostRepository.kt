@@ -7,6 +7,7 @@ import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
@@ -144,6 +145,9 @@ class HostRepository(private val store: HostStore) {
 
     suspend fun machine(hostId: String): ApiResult<HostMachine> =
         withClient(hostId) { it.machine() }
+
+    suspend fun disks(hostId: String): ApiResult<List<HostDisk>> =
+        withClient(hostId) { it.disks() }
 
     suspend fun diskSleep(hostId: String): ApiResult<DiskSleep> =
         withClient(hostId) { it.diskSleep() }

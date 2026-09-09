@@ -60,6 +60,7 @@ import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostKind
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
@@ -192,6 +193,10 @@ fun HostScreen(viewModel: HostViewModel, onBack: () -> Unit) {
                     item { IdentityCard(host, ui.servers) }
 
                     item { UsageCard(ui.usage) }
+
+                    if (ui.disks.isNotEmpty()) {
+                        item { DisksCard(ui.disks) }
+                    }
 
                     item {
                         HealthCard(
@@ -476,7 +481,9 @@ private fun UsageCard(usage: HostUsage) {
             }
             Gauge("Processeur", usage.cpuPercent)
             Gauge("Mémoire", usage.memoryPercent)
-            Gauge("Disque système", usage.diskPercent)
+            // Ce chiffre est la somme des disques de donnees, pas le disque du
+            // systeme : le detail est juste en dessous, disque par disque.
+            Gauge("Stockage", usage.diskPercent)
         }
     }
 }
@@ -493,6 +500,89 @@ private fun Gauge(label: String, percent: Int) {
             progress = { percent / 100f },
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
         )
+    }
+}
+
+/**
+ * Les disques, un par un.
+ *
+ * Un total ne dit pas lequel se remplit : c'est pourtant la seule question qui
+ * se pose devant un NAS. Chaque disque porte donc sa propre jauge, et ce qui
+ * manque - une temperature, une sante - ne laisse pas de trou.
+ */
+@Composable
+private fun DisksCard(disks: List<HostDisk>) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Disques", style = MaterialTheme.typography.titleMedium)
+
+            disks.forEach { disk ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(Modifier.fillMaxWidth()) {
+                        Text(
+                            disk.title,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (disk.percent >= 0) {
+                            Text(
+                                "${disk.percent} %",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+
+                    if (disk.percent >= 0) {
+                        LinearProgressIndicator(
+                            progress = { disk.percent / 100f },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+
+                    val details = buildList {
+                        if (disk.sizeBytes > 0) {
+                            add(
+                                if (disk.usedBytes >= 0) {
+                                    "${humanBytes(disk.usedBytes)} / ${humanBytes(disk.sizeBytes)}"
+                                } else {
+                                    humanBytes(disk.sizeBytes)
+                                },
+                            )
+                        }
+                        if (disk.kind.isNotBlank()) add(disk.kind)
+                        if (disk.temperature >= 0) add("${disk.temperature} °C")
+                        disk.healthy?.let { add(if (it) "santé bonne" else "santé dégradée") }
+                    }
+
+                    if (details.isNotEmpty()) {
+                        Text(
+                            details.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (disk.healthy == false) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+
+                    // Une partition non montee ne se compte pas : le dire evite
+                    // de faire passer un disque plein pour un disque vide.
+                    if (disk.usedBytes < 0 && disk.sizeBytes > 0) {
+                        Text(
+                            "Aucune partition montée : l'occupation reste inconnue.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -535,11 +625,10 @@ private fun HealthCard(
         }
         if (usage.diskTotalBytes > 0) {
             add(
-                "Disque système" to
+                "Stockage total" to
                     "${humanBytes(usage.diskUsedBytes)} / ${humanBytes(usage.diskTotalBytes)}",
             )
         }
-        usage.diskHealthy?.let { add("Santé du disque" to if (it) "bonne" else "dégradée") }
         diskSleep?.let { add("Veille des disques" to it.label) }
     }
 

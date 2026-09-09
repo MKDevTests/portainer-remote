@@ -11,6 +11,7 @@ import dev.mkdev.portainerremote.domain.Host
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
 import dev.mkdev.portainerremote.domain.HostKind
+import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
@@ -40,6 +41,7 @@ data class HostUi(
     val upgradable: Set<String> = emptySet(),
     val usage: HostUsage = HostUsage(),
     val machine: HostMachine = HostMachine(),
+    val disks: List<HostDisk> = emptyList(),
     val diskSleep: DiskSleep? = null,
     /** Vide tant qu'une seule mesure existe : un debit demande deux points. */
     val rates: List<NetRate> = emptyList(),
@@ -120,7 +122,8 @@ class HostViewModel(
             val upgradable = async { hosts.upgradable(hostId) }
             val machine = async { hosts.machine(hostId) }
             val sleep = async { hosts.diskSleep(hostId) }
-            awaitAll(apps, usage, schedule, upgradable, machine, sleep)
+            val disks = async { hosts.disks(hostId) }
+            awaitAll(apps, usage, schedule, upgradable, machine, sleep, disks)
 
             val appsResult = apps.await()
             val fresh = (usage.await() as? ApiResult.Ok)?.value ?: HostUsage()
@@ -135,6 +138,10 @@ class HostViewModel(
                     // derniere connue plutot que de la faire clignoter.
                     machine = (machine.await() as? ApiResult.Ok)?.value ?: state.machine,
                     diskSleep = (sleep.await() as? ApiResult.Ok)?.value ?: state.diskSleep,
+                    // Un disque ne disparait pas parce qu'une lecture a echoue :
+                    // on garde la derniere liste connue plutot qu'une carte vide.
+                    disks = (disks.await() as? ApiResult.Ok)?.value?.takeIf { it.isNotEmpty() }
+                        ?: state.disks,
                     rates = ratesBetween(state.usage, fresh),
                     usage = fresh,
                     // Une extinction programmee absente n'est pas une erreur :

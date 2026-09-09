@@ -4,6 +4,7 @@ import dev.mkdev.portainerremote.core.ApiResult
 import dev.mkdev.portainerremote.domain.DiskSleep
 import dev.mkdev.portainerremote.domain.HostApp
 import dev.mkdev.portainerremote.domain.HostAppAction
+import dev.mkdev.portainerremote.domain.HostDisk
 import dev.mkdev.portainerremote.domain.HostMachine
 import dev.mkdev.portainerremote.domain.HostPower
 import dev.mkdev.portainerremote.domain.HostUsage
@@ -450,6 +451,56 @@ class ZimaClient(
                 memoryTotalBytes = memory?.long("total_byte") ?: -1L,
                 memoryType = memory?.string("type").orEmpty(),
             ),
+        )
+    }
+
+    /**
+     * Les disques physiques.
+     *
+     * La route rend un disque par entree, chacune portant ses partitions dans
+     * « children ». La taille du disque vient du disque, la place occupee de la
+     * somme de ses partitions montees : une partition sans point de montage -
+     * une squashfs du systeme, une reserve - ne compte pas, parce que rien n'y
+     * est stocke par l'utilisateur.
+     *
+     * Le disque systeme est garde comme les autres : c'est celui qui se remplit
+     * sans qu'on s'en apercoive, et le masquer serait cacher la seule panne de
+     * place qui arrete vraiment un conteneur.
+     */
+    override suspend fun disks(): ApiResult<List<HostDisk>> = attempt {
+        val response = call(HttpMethod.Get, "/v2/local_storage/disk")
+        if (!response.status.isSuccess()) return@attempt response.outcome().asFailure()
+        val body = parse(response.bodyAsText()) as? JsonObject
+            ?: return@attempt ApiResult.Ok(emptyList())
+        val data = body["data"] as? JsonArray ?: return@attempt ApiResult.Ok(emptyList())
+
+        ApiResult.Ok(
+            data.mapNotNull { element ->
+                val obj = element as? JsonObject ?: return@mapNotNull null
+                val name = obj.string("name") ?: return@mapNotNull null
+                val mounted = (obj["children"] as? JsonArray).orEmpty()
+                    .filterIsInstance<JsonObject>()
+                    .filter { !it.string("mount_point").isNullOrBlank() }
+                val used = if (mounted.isEmpty()) {
+                    -1L
+                } else {
+                    mounted.sumOf { it.long("used") ?: 0L }
+                }
+                // Une temperature a zero n'est pas une temperature : c'est un
+                // capteur absent, et l'afficher ferait croire a un disque gele.
+                val temperature = obj.long("temperature")?.toInt() ?: 0
+
+                HostDisk(
+                    name = name,
+                    model = obj.string("model").orEmpty(),
+                    kind = obj.string("disk_type").orEmpty(),
+                    sizeBytes = obj.long("size") ?: -1L,
+                    usedBytes = used,
+                    temperature = if (temperature > 0) temperature else -1,
+                    healthy = (obj["health"] as? JsonPrimitive)?.booleanOrNull,
+                    powerOnHours = obj.long("power_on_hours") ?: 0L,
+                )
+            },
         )
     }
 

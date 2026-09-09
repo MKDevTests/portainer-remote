@@ -88,6 +88,41 @@ data class HostUsage(
  * champ de temps de l'hote existe, mais son unite n'a pas ete mesuree, et un
  * debit calcule sur une unite supposee serait faux sans le dire.
  */
+/**
+ * Un disque physique, tel que l'hote le decrit.
+ *
+ * La place occupee ne vient pas du disque mais de ses partitions montees : le
+ * champ que l'hote nomme « percentage_used » vaut 0 sur un disque plein a 94 %
+ * et 10 sur un SSD rempli au quart - c'est l'usure de la memoire flash, pas le
+ * remplissage. Additionner ce que les systemes de fichiers declarent est la
+ * seule mesure qui corresponde a ce qu'on voit.
+ */
+data class HostDisk(
+    val name: String,
+    val model: String,
+    /** HDD, SSD, MMC... tel quel : l'hote le donne deja en toutes lettres. */
+    val kind: String = "",
+    val sizeBytes: Long = -1,
+    /** -1 quand aucune partition montee n'a pu etre additionnee. */
+    val usedBytes: Long = -1,
+    /** En degres Celsius. -1 quand l'hote ne la publie pas ou renvoie 0. */
+    val temperature: Int = -1,
+    val healthy: Boolean? = null,
+    /** Heures de fonctionnement cumulees. 0 quand l'hote se tait. */
+    val powerOnHours: Long = 0,
+) {
+    /** Le titre affiche : le modele s'il existe, sinon le nom du peripherique. */
+    val title get() = model.ifBlank { name }
+
+    /** Le remplissage en pourcentage, ou -1 quand il ne se calcule pas. */
+    val percent: Int
+        get() = if (sizeBytes > 0 && usedBytes >= 0) {
+            ((usedBytes * 100) / sizeBytes).toInt().coerceIn(0, 100)
+        } else {
+            -1
+        }
+}
+
 data class NetCounters(
     val name: String,
     val sentBytes: Long,
